@@ -1,0 +1,316 @@
+<?php
+// Iniciar buffer para evitar salidas indeseadas
+ob_start();
+
+// Configurar zona horaria solicitada por el usuario para evitar desfases
+date_default_timezone_set('America/Mexico_City');
+
+header("Access-Control-Allow-Origin: *");
+header("Access-Control-Allow-Headers: Origin, X-Requested-With, Content-Type, Accept");
+header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
+header("Content-Type: application/json; charset=UTF-8");
+
+if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
+    ob_end_clean();
+    http_response_code(200);
+    exit();
+}
+
+$servername = "localhost";
+$username = "root";
+$password = ""; 
+$dbname = "apprest";
+
+if (!file_exists('uploads')) {
+    mkdir('uploads', 0777, true);
+}
+
+$conn = new mysqli($servername, $username, $password);
+
+// Forzar UTF-8 para evitar errores de JSON vacío por caracteres especiales
+if (!$conn->connect_error) {
+    $conn->set_charset("utf8mb4");
+}
+
+function send_response($data) {
+    ob_end_clean();
+    echo json_encode($data);
+    exit();
+}
+
+if ($conn->connect_error) {
+    send_response(["status" => "error", "message" => "Conexión fallida: " . $conn->connect_error]);
+}
+
+$action = $_GET['action'] ?? '';
+
+if ($action !== 'init' && $action !== 'check') {
+    $conn->select_db($dbname);
+}
+
+// --- ENDPOINTS ---
+
+if ($action === 'check') {
+    try {
+        if ($conn->select_db($dbname)) {
+            send_response(["status" => "connected"]);
+        } else {
+            send_response(["status" => "missing"]);
+        }
+    } catch (Exception $e) {
+        send_response(["status" => "missing"]);
+    }
+} 
+elseif ($action === 'init') {
+    $sql = "CREATE DATABASE IF NOT EXISTS $dbname CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci";
+    if ($conn->query($sql) === TRUE) {
+        $conn->select_db($dbname);
+        
+        $conn->query("CREATE TABLE IF NOT EXISTS usuarios (id VARCHAR(50) PRIMARY KEY, nombre VARCHAR(100), email VARCHAR(100) UNIQUE, password_hash VARCHAR(255), rol VARCHAR(20))");
+        $conn->query("CREATE TABLE IF NOT EXISTS categorias (id VARCHAR(50) PRIMARY KEY, nombre VARCHAR(100), tipo VARCHAR(20), descripcion TEXT)");
+        $conn->query("CREATE TABLE IF NOT EXISTS insumos (id VARCHAR(50) PRIMARY KEY, codigo VARCHAR(50), nombre VARCHAR(100), descripcion TEXT, precio DECIMAL(10,2), tipo VARCHAR(20), categoria_id VARCHAR(50), imagen TEXT)");
+        $conn->query("CREATE TABLE IF NOT EXISTS ventas (id VARCHAR(50) PRIMARY KEY, consecutivo INT AUTO_INCREMENT UNIQUE, id_mesa VARCHAR(20), cliente VARCHAR(100), total DECIMAL(10,2), monto_recibido DECIMAL(10,2), monto_cambio DECIMAL(10,2), pagado TINYINT(1), id_usuario VARCHAR(50), fecha DATETIME, tipo_pedido VARCHAR(20))");
+        $conn->query("CREATE TABLE IF NOT EXISTS detalles_venta (id VARCHAR(50) PRIMARY KEY, id_venta VARCHAR(50), id_insumo VARCHAR(50), codigo_producto VARCHAR(50), nombre_producto VARCHAR(100), cantidad INT, precio_unitario DECIMAL(10,2), subtotal DECIMAL(10,2), notas TEXT)");
+        $conn->query("CREATE TABLE IF NOT EXISTS config (id INT PRIMARY KEY, nombre VARCHAR(100), telefono VARCHAR(50), logo TEXT, numeroMesas INT)");
+        
+        // TABLA NUEVA: Pedidos Temporales (Persistencia de mesas abiertas)
+        $conn->query("CREATE TABLE IF NOT EXISTS pedidos_temporales (
+            id VARCHAR(50) PRIMARY KEY,
+            id_mesa VARCHAR(20),
+            id_insumo VARCHAR(50),
+            cantidad INT,
+            id_usuario VARCHAR(50),
+            notas TEXT,
+            estado VARCHAR(20),
+            fecha_hora DATETIME,
+            cliente VARCHAR(100),
+            tipo_pedido VARCHAR(20)
+        )");
+
+        $conn->query("INSERT IGNORE INTO usuarios (id, nombre, email, password_hash, rol) VALUES ('u1', 'Admin', 'admin@apprest.com', 'admin123', 'admin')");
+        $conn->query("INSERT IGNORE INTO config (id, nombre, telefono, logo, numeroMesas) VALUES (1, 'Mi Restaurante', '555-0000', '', 10)");
+
+        send_response(["status" => "success"]);
+    } else {
+        send_response(["status" => "error", "message" => $conn->error]);
+    }
+}
+elseif ($action === 'upload') {
+    if (isset($_FILES['image'])) {
+        $file = $_FILES['image'];
+        $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
+        $filename = uniqid() . '.' . $ext;
+        $target = 'uploads/' . $filename;
+        if (move_uploaded_file($file['tmp_name'], $target)) {
+            $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http";
+            $url = "$protocol://$_SERVER[HTTP_HOST]" . dirname($_SERVER['REQUEST_URI']) . "/$target";
+            send_response(["status" => "success", "url" => $url]);
+        } else {
+            send_response(["status" => "error", "message" => "Fallo al mover archivo"]);
+        }
+    } else {
+        send_response(["status" => "error", "message" => "No se envió imagen"]);
+    }
+}
+elseif ($action === 'register') {
+    $data = json_decode(file_get_contents("php://input"), true);
+    $id = uniqid('u_');
+    $nombre = $conn->real_escape_string($data['nombre']);
+    $email = $conn->real_escape_string($data['email']);
+    $pass = $data['password']; 
+    // Forzamos rol admin por defecto
+    $rol = 'admin'; 
+
+    $check = $conn->query("SELECT id FROM usuarios WHERE email = '$email'");
+    if ($check && $check->num_rows > 0) {
+        send_response(["status" => "error", "message" => "El correo ya está registrado"]);
+    } else {
+        $sql = "INSERT INTO usuarios (id, nombre, email, password_hash, rol) VALUES ('$id', '$nombre', '$email', '$pass', '$rol')";
+        if ($conn->query($sql) === TRUE) {
+            send_response(["status" => "success"]);
+        } else {
+            send_response(["status" => "error", "message" => $conn->error]);
+        }
+    }
+}
+elseif ($action === 'login') {
+    $data = json_decode(file_get_contents("php://input"), true);
+    $email = $conn->real_escape_string($data['email']);
+    $pass = $data['password']; 
+    $result = $conn->query("SELECT * FROM usuarios WHERE email = '$email' AND password_hash = '$pass'");
+    if ($result && $result->num_rows > 0) {
+        send_response(["status" => "success", "user" => $result->fetch_assoc()]);
+    } else {
+        send_response(["status" => "error", "message" => "Credenciales incorrectas"]);
+    }
+}
+elseif ($action === 'get_all_data') {
+    // --- CORRECCIÓN CRÍTICA: Lógica segura para obtener datos ---
+    $data = [];
+    
+    // Config
+    $resConfig = $conn->query("SELECT * FROM config WHERE id = 1");
+    $data['config'] = ($resConfig && $resConfig->num_rows > 0) ? $resConfig->fetch_assoc() : null;
+
+    // Usuarios
+    $resUsers = $conn->query("SELECT * FROM usuarios");
+    $data['usuarios'] = ($resUsers) ? $resUsers->fetch_all(MYSQLI_ASSOC) : [];
+
+    // Categorias
+    $resCats = $conn->query("SELECT * FROM categorias");
+    $data['categorias'] = ($resCats) ? $resCats->fetch_all(MYSQLI_ASSOC) : [];
+
+    // Insumos
+    $resInsumos = $conn->query("SELECT * FROM insumos");
+    $data['insumos'] = ($resInsumos) ? $resInsumos->fetch_all(MYSQLI_ASSOC) : [];
+
+    // Ventas
+    $resVentas = $conn->query("SELECT * FROM ventas ORDER BY consecutivo DESC LIMIT 1000");
+    $ventas = ($resVentas) ? $resVentas->fetch_all(MYSQLI_ASSOC) : [];
+    $data['ventas'] = $ventas;
+
+    // Detalles
+    if (count($ventas) > 0) {
+        $ids = array_map(function($v) { return "'" . $v['id'] . "'"; }, $ventas);
+        $idsStr = implode(',', $ids);
+        $resDetalles = $conn->query("SELECT * FROM detalles_venta WHERE id_venta IN ($idsStr)");
+        $data['detalles'] = ($resDetalles) ? $resDetalles->fetch_all(MYSQLI_ASSOC) : [];
+    } else {
+        $data['detalles'] = [];
+    }
+
+    // Pedidos Temporales (Mesas abiertas)
+    $resTemp = $conn->query("SELECT * FROM pedidos_temporales");
+    $data['pedidos_temporales'] = ($resTemp) ? $resTemp->fetch_all(MYSQLI_ASSOC) : [];
+
+    send_response($data);
+}
+elseif ($action === 'save_config') {
+    $d = json_decode(file_get_contents("php://input"), true);
+    $nombre = $conn->real_escape_string($d['nombre']);
+    $tel = $conn->real_escape_string($d['telefono']);
+    $logo = $conn->real_escape_string($d['logo']);
+    $mesas = (int)$d['numeroMesas'];
+    $sql = "UPDATE config SET nombre='$nombre', telefono='$tel', logo='$logo', numeroMesas=$mesas WHERE id=1";
+    $conn->query($sql);
+    send_response(["status" => "success"]);
+}
+elseif ($action === 'save_category') {
+    $d = json_decode(file_get_contents("php://input"), true);
+    $id = $d['id']; $nom = $d['nombre']; $tipo = $d['tipo']; $desc = $d['descripcion'];
+    $sql = "INSERT INTO categorias (id, nombre, tipo, descripcion) VALUES ('$id', '$nom', '$tipo', '$desc') ON DUPLICATE KEY UPDATE nombre='$nom', tipo='$tipo', descripcion='$desc'";
+    $conn->query($sql);
+    send_response(["status" => "success"]);
+}
+elseif ($action === 'delete_category') {
+    $id = $_GET['id'];
+    $conn->query("DELETE FROM categorias WHERE id='$id'");
+    send_response(["status" => "success"]);
+}
+elseif ($action === 'save_product') {
+    $d = json_decode(file_get_contents("php://input"), true);
+    $id = $d['id']; $cod = $d['codigo']; $nom = $d['nombre']; $desc = $d['descripcion'];
+    $pre = $d['precio']; $tipo = $d['tipo']; $cat = $d['categoria_id']; $img = $d['imagen'];
+    $sql = "INSERT INTO insumos (id, codigo, nombre, descripcion, precio, tipo, categoria_id, imagen) VALUES ('$id', '$cod', '$nom', '$desc', $pre, '$tipo', '$cat', '$img') ON DUPLICATE KEY UPDATE codigo='$cod', nombre='$nom', descripcion='$desc', precio=$pre, tipo='$tipo', categoria_id='$cat', imagen='$img'";
+    if($conn->query($sql)) send_response(["status" => "success"]);
+    else send_response(["status" => "error", "message" => $conn->error]);
+}
+elseif ($action === 'delete_product') {
+    $id = $_GET['id'];
+    $conn->query("DELETE FROM insumos WHERE id='$id'");
+    send_response(["status" => "success"]);
+}
+elseif ($action === 'save_sale') {
+    $d = json_decode(file_get_contents("php://input"), true);
+    $v = $d['venta'];
+    $detalles = $d['detalles'];
+    $sqlV = "INSERT INTO ventas (id, consecutivo, id_mesa, cliente, total, monto_recibido, monto_cambio, pagado, id_usuario, fecha, tipo_pedido) VALUES ('{$v['id']}', {$v['consecutivo']}, '{$v['id_mesa']}', '{$v['cliente']}', {$v['total']}, {$v['monto_recibido']}, {$v['monto_cambio']}, 1, '{$v['id_usuario']}', '{$v['fecha']}', '{$v['tipo_pedido']}')";
+    $conn->query($sqlV);
+    foreach($detalles as $det) {
+        $sqlD = "INSERT INTO detalles_venta (id, id_venta, id_insumo, codigo_producto, nombre_producto, cantidad, precio_unitario, subtotal, notas) VALUES ('{$det['id']}', '{$v['id']}', '{$det['id_insumo']}', '{$det['codigo_producto']}', '{$det['nombre_producto']}', {$det['cantidad']}, {$det['precio_unitario']}, {$det['subtotal']}, '{$det['notas']}')";
+        $conn->query($sqlD);
+    }
+    send_response(["status" => "success"]);
+}
+elseif ($action === 'save_temp_order') {
+    // Guarda o actualiza un item individual en una mesa
+    $d = json_decode(file_get_contents("php://input"), true);
+    $id = $d['id'];
+    $idMesa = $d['id_mesa'];
+    $idInsumo = $d['id_insumo'];
+    $cantidad = $d['cantidad'];
+    $idUsuario = $d['id_usuario'];
+    $notas = $conn->real_escape_string($d['notas']);
+    $estado = $d['estado'];
+    $fecha = $d['fecha_hora'];
+    $cliente = $conn->real_escape_string($d['cliente'] ?? '');
+    $tipo = $d['tipo_pedido'] ?? 'LOCAL';
+
+    $sql = "INSERT INTO pedidos_temporales (id, id_mesa, id_insumo, cantidad, id_usuario, notas, estado, fecha_hora, cliente, tipo_pedido) 
+            VALUES ('$id', '$idMesa', '$idInsumo', $cantidad, '$idUsuario', '$notas', '$estado', '$fecha', '$cliente', '$tipo')
+            ON DUPLICATE KEY UPDATE cantidad=$cantidad, notas='$notas', estado='$estado', cliente='$cliente', tipo_pedido='$tipo'";
+    
+    if($conn->query($sql)) send_response(["status" => "success"]);
+    else send_response(["status" => "error", "message" => $conn->error]);
+}
+elseif ($action === 'delete_temp_order') {
+    $id = $_GET['id'];
+    $conn->query("DELETE FROM pedidos_temporales WHERE id='$id'");
+    send_response(["status" => "success"]);
+}
+elseif ($action === 'clear_table') {
+    $idMesa = $_GET['id_mesa'];
+    $conn->query("DELETE FROM pedidos_temporales WHERE id_mesa='$idMesa'");
+    send_response(["status" => "success"]);
+}
+elseif ($action === 'update_order_status') {
+    $d = json_decode(file_get_contents("php://input"), true);
+    $id = $d['id'];
+    $estado = $d['estado'];
+    $conn->query("UPDATE pedidos_temporales SET estado='$estado' WHERE id='$id'");
+    send_response(["status" => "success"]);
+}
+elseif ($action === 'update_table_meta') {
+    // Actualiza cliente y tipo para TODOS los items de la mesa
+    $d = json_decode(file_get_contents("php://input"), true);
+    $idMesa = $d['id_mesa'];
+    $cliente = $conn->real_escape_string($d['cliente']);
+    $tipo = $d['tipo_pedido'];
+    $conn->query("UPDATE pedidos_temporales SET cliente='$cliente', tipo_pedido='$tipo' WHERE id_mesa='$idMesa'");
+    send_response(["status" => "success"]);
+}
+elseif ($action === 'update_profile') {
+    $d = json_decode(file_get_contents("php://input"), true);
+    $id = $conn->real_escape_string($d['id']);
+    $nombre = $conn->real_escape_string($d['nombre']);
+    $email = $conn->real_escape_string($d['email']);
+    
+    $sql = "UPDATE usuarios SET nombre='$nombre', email='$email' WHERE id='$id'";
+    if ($conn->query($sql) === TRUE) {
+        send_response(["status" => "success"]);
+    } else {
+        send_response(["status" => "error", "message" => $conn->error]);
+    }
+}
+elseif ($action === 'change_password') {
+    $d = json_decode(file_get_contents("php://input"), true);
+    $id = $conn->real_escape_string($d['id']);
+    $actual = $d['actual'];
+    $nueva = $d['nueva'];
+    
+    // Verificar contraseña actual
+    $check = $conn->query("SELECT id FROM usuarios WHERE id='$id' AND password_hash='$actual'");
+    if ($check && $check->num_rows > 0) {
+        $sql = "UPDATE usuarios SET password_hash='$nueva' WHERE id='$id'";
+        if ($conn->query($sql) === TRUE) {
+            send_response(["status" => "success"]);
+        } else {
+            send_response(["status" => "error", "message" => $conn->error]);
+        }
+    } else {
+        send_response(["status" => "error", "message" => "Contraseña actual incorrecta"]);
+    }
+}
+
+$conn->close();
+?>
