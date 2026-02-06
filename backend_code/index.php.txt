@@ -6,7 +6,7 @@ ob_start();
 date_default_timezone_set('America/Mexico_City');
 
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Headers: Origin, X-Requested-With, Content-Type, Accept");
+header("Access-Control-Allow-Headers: Origin, X-Requested-With, Content-Type, Accept, Authorization");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 header("Content-Type: application/json; charset=UTF-8");
 
@@ -27,15 +27,54 @@ if (!file_exists('uploads')) {
 
 $conn = new mysqli($servername, $username, $password);
 
-// Forzar UTF-8 para evitar errores de JSON vacío por caracteres especiales
+// Forzar UTF-8
 if (!$conn->connect_error) {
     $conn->set_charset("utf8mb4");
 }
 
-function send_response($data) {
+function send_response($data, $code = 200) {
     ob_end_clean();
+    http_response_code($code);
     echo json_encode($data);
     exit();
+}
+
+// --- AUTENTICACIÓN ROBUSTA ---
+function authenticate($conn) {
+    $authHeader = null;
+
+    // 1. Intentar obtener vía getallheaders() (Apache) maneja Case-Insensitive
+    if (function_exists('getallheaders')) {
+        $headers = getallheaders();
+        foreach ($headers as $key => $value) {
+            if (strtolower($key) === 'authorization') {
+                $authHeader = $value;
+                break;
+            }
+        }
+    }
+
+    // 2. Fallback a $_SERVER (Nginx, FastCGI, Apache Rewrites)
+    if (!$authHeader) {
+        if (isset($_SERVER['HTTP_AUTHORIZATION'])) {
+            $authHeader = $_SERVER['HTTP_AUTHORIZATION'];
+        } elseif (isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+            $authHeader = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+        }
+    }
+    
+    if ($authHeader && preg_match('/Bearer\s(\S+)/', $authHeader, $matches)) {
+        $token = $conn->real_escape_string($matches[1]);
+        $checkCol = $conn->query("SHOW COLUMNS FROM usuarios LIKE 'token'");
+        if($checkCol && $checkCol->num_rows > 0) {
+            $result = $conn->query("SELECT * FROM usuarios WHERE token = '$token' AND token IS NOT NULL AND token != ''");
+            if ($result && $result->num_rows > 0) {
+                return $result->fetch_assoc();
+            }
+        }
+    }
+    
+    send_response(["status" => "error", "message" => "No autorizado. Sesión inválida o expirada."], 401);
 }
 
 if ($conn->connect_error) {
@@ -48,7 +87,7 @@ if ($action !== 'init' && $action !== 'check') {
     $conn->select_db($dbname);
 }
 
-// --- ENDPOINTS ---
+// --- ENDPOINTS PÚBLICOS ---
 
 if ($action === 'check') {
     try {
@@ -67,27 +106,23 @@ elseif ($action === 'init') {
         $conn->select_db($dbname);
         
         $conn->query("CREATE TABLE IF NOT EXISTS usuarios (id VARCHAR(50) PRIMARY KEY, nombre VARCHAR(100), email VARCHAR(100) UNIQUE, password_hash VARCHAR(255), rol VARCHAR(20))");
+        
+        $check = $conn->query("SHOW COLUMNS FROM usuarios LIKE 'token'");
+        if ($check && $check->num_rows == 0) {
+            $conn->query("ALTER TABLE usuarios ADD COLUMN token VARCHAR(64)");
+        }
+
         $conn->query("CREATE TABLE IF NOT EXISTS categorias (id VARCHAR(50) PRIMARY KEY, nombre VARCHAR(100), tipo VARCHAR(20), descripcion TEXT)");
         $conn->query("CREATE TABLE IF NOT EXISTS insumos (id VARCHAR(50) PRIMARY KEY, codigo VARCHAR(50), nombre VARCHAR(100), descripcion TEXT, precio DECIMAL(10,2), tipo VARCHAR(20), categoria_id VARCHAR(50), imagen TEXT)");
         $conn->query("CREATE TABLE IF NOT EXISTS ventas (id VARCHAR(50) PRIMARY KEY, consecutivo INT AUTO_INCREMENT UNIQUE, id_mesa VARCHAR(20), cliente VARCHAR(100), total DECIMAL(10,2), monto_recibido DECIMAL(10,2), monto_cambio DECIMAL(10,2), pagado TINYINT(1), id_usuario VARCHAR(50), fecha DATETIME, tipo_pedido VARCHAR(20))");
         $conn->query("CREATE TABLE IF NOT EXISTS detalles_venta (id VARCHAR(50) PRIMARY KEY, id_venta VARCHAR(50), id_insumo VARCHAR(50), codigo_producto VARCHAR(50), nombre_producto VARCHAR(100), cantidad INT, precio_unitario DECIMAL(10,2), subtotal DECIMAL(10,2), notas TEXT)");
         $conn->query("CREATE TABLE IF NOT EXISTS config (id INT PRIMARY KEY, nombre VARCHAR(100), telefono VARCHAR(50), logo TEXT, numeroMesas INT)");
-        
-        // TABLA NUEVA: Pedidos Temporales (Persistencia de mesas abiertas)
         $conn->query("CREATE TABLE IF NOT EXISTS pedidos_temporales (
-            id VARCHAR(50) PRIMARY KEY,
-            id_mesa VARCHAR(20),
-            id_insumo VARCHAR(50),
-            cantidad INT,
-            id_usuario VARCHAR(50),
-            notas TEXT,
-            estado VARCHAR(20),
-            fecha_hora DATETIME,
-            cliente VARCHAR(100),
-            tipo_pedido VARCHAR(20)
+            id VARCHAR(50) PRIMARY KEY, id_mesa VARCHAR(20), id_insumo VARCHAR(50), cantidad INT, id_usuario VARCHAR(50), notas TEXT, estado VARCHAR(20), fecha_hora DATETIME, cliente VARCHAR(100), tipo_pedido VARCHAR(20)
         )");
 
-        $conn->query("INSERT IGNORE INTO usuarios (id, nombre, email, password_hash, rol) VALUES ('u1', 'Admin', 'admin@apprest.com', 'admin123', 'admin')");
+        $adminPass = password_hash('admin123', PASSWORD_DEFAULT);
+        $conn->query("INSERT IGNORE INTO usuarios (id, nombre, email, password_hash, rol) VALUES ('u1', 'Admin', 'admin@apprest.com', '$adminPass', 'admin')");
         $conn->query("INSERT IGNORE INTO config (id, nombre, telefono, logo, numeroMesas) VALUES (1, 'Mi Restaurante', '555-0000', '', 10)");
 
         send_response(["status" => "success"]);
@@ -95,7 +130,66 @@ elseif ($action === 'init') {
         send_response(["status" => "error", "message" => $conn->error]);
     }
 }
-elseif ($action === 'upload') {
+elseif ($action === 'login') {
+    $data = json_decode(file_get_contents("php://input"), true);
+    $email = $conn->real_escape_string($data['email']);
+    $pass = $data['password']; 
+    
+    $result = $conn->query("SELECT * FROM usuarios WHERE email = '$email'");
+    if ($result && $result->num_rows > 0) {
+        $user = $result->fetch_assoc();
+        if (password_verify($pass, $user['password_hash'])) {
+            $token = bin2hex(random_bytes(32));
+            $uid = $user['id'];
+            
+            $updateSuccess = $conn->query("UPDATE usuarios SET token = '$token' WHERE id = '$uid'");
+            if (!$updateSuccess) {
+                $conn->query("ALTER TABLE usuarios ADD COLUMN token VARCHAR(64)");
+                $conn->query("UPDATE usuarios SET token = '$token' WHERE id = '$uid'");
+            }
+            
+            $user['token'] = $token;
+            unset($user['password_hash']);
+            send_response(["status" => "success", "user" => $user]);
+        } else {
+            send_response(["status" => "error", "message" => "Contraseña incorrecta"]);
+        }
+    } else {
+        send_response(["status" => "error", "message" => "Usuario no encontrado"]);
+    }
+}
+elseif ($action === 'register') {
+    $data = json_decode(file_get_contents("php://input"), true);
+    // Generar ID de usuario en servidor
+    $id = uniqid('u_');
+    $nombre = $conn->real_escape_string($data['nombre']);
+    $email = $conn->real_escape_string($data['email']);
+    $pass = password_hash($data['password'], PASSWORD_DEFAULT);
+    $rol = 'admin'; 
+
+    $check = $conn->query("SELECT id FROM usuarios WHERE email = '$email'");
+    if ($check && $check->num_rows > 0) {
+        send_response(["status" => "error", "message" => "El correo ya está registrado"]);
+    } else {
+        $checkCol = $conn->query("SHOW COLUMNS FROM usuarios LIKE 'token'");
+        if ($checkCol && $checkCol->num_rows == 0) {
+            $conn->query("ALTER TABLE usuarios ADD COLUMN token VARCHAR(64)");
+        }
+
+        $sql = "INSERT INTO usuarios (id, nombre, email, password_hash, rol) VALUES ('$id', '$nombre', '$email', '$pass', '$rol')";
+        if ($conn->query($sql) === TRUE) {
+            send_response(["status" => "success"]);
+        } else {
+            send_response(["status" => "error", "message" => $conn->error]);
+        }
+    }
+}
+
+// --- ENDPOINTS PROTEGIDOS ---
+
+$currentUser = authenticate($conn);
+
+if ($action === 'upload') {
     if (isset($_FILES['image'])) {
         $file = $_FILES['image'];
         $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
@@ -112,64 +206,30 @@ elseif ($action === 'upload') {
         send_response(["status" => "error", "message" => "No se envió imagen"]);
     }
 }
-elseif ($action === 'register') {
-    $data = json_decode(file_get_contents("php://input"), true);
-    $id = uniqid('u_');
-    $nombre = $conn->real_escape_string($data['nombre']);
-    $email = $conn->real_escape_string($data['email']);
-    $pass = $data['password']; 
-    // Forzamos rol admin por defecto
-    $rol = 'admin'; 
-
-    $check = $conn->query("SELECT id FROM usuarios WHERE email = '$email'");
-    if ($check && $check->num_rows > 0) {
-        send_response(["status" => "error", "message" => "El correo ya está registrado"]);
-    } else {
-        $sql = "INSERT INTO usuarios (id, nombre, email, password_hash, rol) VALUES ('$id', '$nombre', '$email', '$pass', '$rol')";
-        if ($conn->query($sql) === TRUE) {
-            send_response(["status" => "success"]);
-        } else {
-            send_response(["status" => "error", "message" => $conn->error]);
-        }
-    }
-}
-elseif ($action === 'login') {
-    $data = json_decode(file_get_contents("php://input"), true);
-    $email = $conn->real_escape_string($data['email']);
-    $pass = $data['password']; 
-    $result = $conn->query("SELECT * FROM usuarios WHERE email = '$email' AND password_hash = '$pass'");
-    if ($result && $result->num_rows > 0) {
-        send_response(["status" => "success", "user" => $result->fetch_assoc()]);
-    } else {
-        send_response(["status" => "error", "message" => "Credenciales incorrectas"]);
-    }
+elseif ($action === 'logout') {
+    $uid = $currentUser['id'];
+    $conn->query("UPDATE usuarios SET token = NULL WHERE id = '$uid'");
+    send_response(["status" => "success"]);
 }
 elseif ($action === 'get_all_data') {
-    // --- CORRECCIÓN CRÍTICA: Lógica segura para obtener datos ---
     $data = [];
     
-    // Config
     $resConfig = $conn->query("SELECT * FROM config WHERE id = 1");
     $data['config'] = ($resConfig && $resConfig->num_rows > 0) ? $resConfig->fetch_assoc() : null;
 
-    // Usuarios
-    $resUsers = $conn->query("SELECT * FROM usuarios");
+    $resUsers = $conn->query("SELECT id, nombre, email, rol FROM usuarios");
     $data['usuarios'] = ($resUsers) ? $resUsers->fetch_all(MYSQLI_ASSOC) : [];
 
-    // Categorias
     $resCats = $conn->query("SELECT * FROM categorias");
     $data['categorias'] = ($resCats) ? $resCats->fetch_all(MYSQLI_ASSOC) : [];
 
-    // Insumos
     $resInsumos = $conn->query("SELECT * FROM insumos");
     $data['insumos'] = ($resInsumos) ? $resInsumos->fetch_all(MYSQLI_ASSOC) : [];
 
-    // Ventas
     $resVentas = $conn->query("SELECT * FROM ventas ORDER BY consecutivo DESC LIMIT 1000");
     $ventas = ($resVentas) ? $resVentas->fetch_all(MYSQLI_ASSOC) : [];
     $data['ventas'] = $ventas;
 
-    // Detalles
     if (count($ventas) > 0) {
         $ids = array_map(function($v) { return "'" . $v['id'] . "'"; }, $ventas);
         $idsStr = implode(',', $ids);
@@ -179,7 +239,6 @@ elseif ($action === 'get_all_data') {
         $data['detalles'] = [];
     }
 
-    // Pedidos Temporales (Mesas abiertas)
     $resTemp = $conn->query("SELECT * FROM pedidos_temporales");
     $data['pedidos_temporales'] = ($resTemp) ? $resTemp->fetch_all(MYSQLI_ASSOC) : [];
 
@@ -197,26 +256,47 @@ elseif ($action === 'save_config') {
 }
 elseif ($action === 'save_category') {
     $d = json_decode(file_get_contents("php://input"), true);
-    $id = $d['id']; $nom = $d['nombre']; $tipo = $d['tipo']; $desc = $d['descripcion'];
-    $sql = "INSERT INTO categorias (id, nombre, tipo, descripcion) VALUES ('$id', '$nom', '$tipo', '$desc') ON DUPLICATE KEY UPDATE nombre='$nom', tipo='$tipo', descripcion='$desc'";
-    $conn->query($sql);
-    send_response(["status" => "success"]);
+    // Generar ID si es nuevo
+    $id = !empty($d['id']) ? $conn->real_escape_string($d['id']) : uniqid('c_');
+    $nom = $conn->real_escape_string($d['nombre']);
+    $tipo = $conn->real_escape_string($d['tipo']);
+    $desc = $conn->real_escape_string($d['descripcion']);
+    
+    $sql = "INSERT INTO categorias (id, nombre, tipo, descripcion) VALUES ('$id', '$nom', '$tipo', '$desc') 
+            ON DUPLICATE KEY UPDATE nombre='$nom', tipo='$tipo', descripcion='$desc'";
+            
+    if ($conn->query($sql)) {
+        send_response(["status" => "success", "id" => $id]);
+    } else {
+        send_response(["status" => "error", "message" => $conn->error]);
+    }
 }
 elseif ($action === 'delete_category') {
-    $id = $_GET['id'];
+    $id = $conn->real_escape_string($_GET['id']);
     $conn->query("DELETE FROM categorias WHERE id='$id'");
     send_response(["status" => "success"]);
 }
 elseif ($action === 'save_product') {
     $d = json_decode(file_get_contents("php://input"), true);
-    $id = $d['id']; $cod = $d['codigo']; $nom = $d['nombre']; $desc = $d['descripcion'];
-    $pre = $d['precio']; $tipo = $d['tipo']; $cat = $d['categoria_id']; $img = $d['imagen'];
-    $sql = "INSERT INTO insumos (id, codigo, nombre, descripcion, precio, tipo, categoria_id, imagen) VALUES ('$id', '$cod', '$nom', '$desc', $pre, '$tipo', '$cat', '$img') ON DUPLICATE KEY UPDATE codigo='$cod', nombre='$nom', descripcion='$desc', precio=$pre, tipo='$tipo', categoria_id='$cat', imagen='$img'";
-    if($conn->query($sql)) send_response(["status" => "success"]);
+    // Generar ID si es nuevo
+    $id = !empty($d['id']) ? $conn->real_escape_string($d['id']) : uniqid('p_');
+    $cod = $conn->real_escape_string($d['codigo']);
+    $nom = $conn->real_escape_string($d['nombre']);
+    $desc = $conn->real_escape_string($d['descripcion']);
+    $pre = (float)$d['precio'];
+    $tipo = $conn->real_escape_string($d['tipo']);
+    $cat = $conn->real_escape_string($d['categoria_id']);
+    $img = $conn->real_escape_string($d['imagen']);
+    
+    $sql = "INSERT INTO insumos (id, codigo, nombre, descripcion, precio, tipo, categoria_id, imagen) 
+            VALUES ('$id', '$cod', '$nom', '$desc', $pre, '$tipo', '$cat', '$img') 
+            ON DUPLICATE KEY UPDATE codigo='$cod', nombre='$nom', descripcion='$desc', precio=$pre, tipo='$tipo', categoria_id='$cat', imagen='$img'";
+            
+    if($conn->query($sql)) send_response(["status" => "success", "id" => $id]);
     else send_response(["status" => "error", "message" => $conn->error]);
 }
 elseif ($action === 'delete_product') {
-    $id = $_GET['id'];
+    $id = $conn->real_escape_string($_GET['id']);
     $conn->query("DELETE FROM insumos WHERE id='$id'");
     send_response(["status" => "success"]);
 }
@@ -224,64 +304,99 @@ elseif ($action === 'save_sale') {
     $d = json_decode(file_get_contents("php://input"), true);
     $v = $d['venta'];
     $detalles = $d['detalles'];
-    $sqlV = "INSERT INTO ventas (id, consecutivo, id_mesa, cliente, total, monto_recibido, monto_cambio, pagado, id_usuario, fecha, tipo_pedido) VALUES ('{$v['id']}', {$v['consecutivo']}, '{$v['id_mesa']}', '{$v['cliente']}', {$v['total']}, {$v['monto_recibido']}, {$v['monto_cambio']}, 1, '{$v['id_usuario']}', '{$v['fecha']}', '{$v['tipo_pedido']}')";
-    $conn->query($sqlV);
-    foreach($detalles as $det) {
-        $sqlD = "INSERT INTO detalles_venta (id, id_venta, id_insumo, codigo_producto, nombre_producto, cantidad, precio_unitario, subtotal, notas) VALUES ('{$det['id']}', '{$v['id']}', '{$det['id_insumo']}', '{$det['codigo_producto']}', '{$det['nombre_producto']}', {$det['cantidad']}, {$det['precio_unitario']}, {$det['subtotal']}, '{$det['notas']}')";
-        $conn->query($sqlD);
+
+    // Generar ID de Venta si no viene
+    $id = !empty($v['id']) ? $conn->real_escape_string($v['id']) : uniqid('v_');
+    $consecutivo = (int)$v['consecutivo'];
+    $id_mesa = $conn->real_escape_string($v['id_mesa']);
+    $cliente = $conn->real_escape_string($v['cliente']);
+    $total = (float)$v['total'];
+    $monto_recibido = (float)$v['monto_recibido'];
+    $monto_cambio = (float)$v['monto_cambio'];
+    $id_usuario = $conn->real_escape_string($v['id_usuario']);
+    $fecha = $conn->real_escape_string($v['fecha']);
+    $tipo_pedido = $conn->real_escape_string($v['tipo_pedido']);
+
+    $sqlV = "INSERT INTO ventas (id, consecutivo, id_mesa, cliente, total, monto_recibido, monto_cambio, pagado, id_usuario, fecha, tipo_pedido) 
+             VALUES ('$id', $consecutivo, '$id_mesa', '$cliente', $total, $monto_recibido, $monto_cambio, 1, '$id_usuario', '$fecha', '$tipo_pedido')";
+    
+    if ($conn->query($sqlV)) {
+        foreach($detalles as $det) {
+            // Generar ID de detalle
+            $id_d = !empty($det['id']) ? $conn->real_escape_string($det['id']) : uniqid('d_');
+            $id_insumo = $conn->real_escape_string($det['id_insumo']);
+            $codigo_prod = $conn->real_escape_string($det['codigo_producto']);
+            $nombre_prod = $conn->real_escape_string($det['nombre_producto']);
+            $cantidad = (int)$det['cantidad'];
+            $precio_unit = (float)$det['precio_unitario'];
+            $subtotal = (float)$det['subtotal'];
+            $notas = $conn->real_escape_string($det['notas']);
+
+            $sqlD = "INSERT INTO detalles_venta (id, id_venta, id_insumo, codigo_producto, nombre_producto, cantidad, precio_unitario, subtotal, notas) 
+                     VALUES ('$id_d', '$id', '$id_insumo', '$codigo_prod', '$nombre_prod', $cantidad, $precio_unit, $subtotal, '$notas')";
+            $conn->query($sqlD);
+        }
+        // Devolver el ID generado
+        send_response(["status" => "success", "id" => $id]);
+    } else {
+        send_response(["status" => "error", "message" => "Error guardando venta: " . $conn->error]);
     }
-    send_response(["status" => "success"]);
 }
 elseif ($action === 'save_temp_order') {
-    // Guarda o actualiza un item individual en una mesa
     $d = json_decode(file_get_contents("php://input"), true);
-    $id = $d['id'];
-    $idMesa = $d['id_mesa'];
-    $idInsumo = $d['id_insumo'];
-    $cantidad = $d['cantidad'];
-    $idUsuario = $d['id_usuario'];
+    
+    // Generar ID temporal si es nuevo
+    $id = !empty($d['id']) ? $conn->real_escape_string($d['id']) : uniqid('t_');
+    $idMesa = $conn->real_escape_string($d['id_mesa']);
+    $idInsumo = $conn->real_escape_string($d['id_insumo']);
+    $cantidad = (int)$d['cantidad'];
+    $idUsuario = $conn->real_escape_string($d['id_usuario']);
     $notas = $conn->real_escape_string($d['notas']);
-    $estado = $d['estado'];
-    $fecha = $d['fecha_hora'];
+    $estado = $conn->real_escape_string($d['estado']);
+    $fecha = $conn->real_escape_string($d['fecha_hora']);
     $cliente = $conn->real_escape_string($d['cliente'] ?? '');
-    $tipo = $d['tipo_pedido'] ?? 'LOCAL';
+    $tipo = $conn->real_escape_string($d['tipo_pedido'] ?? 'LOCAL');
 
     $sql = "INSERT INTO pedidos_temporales (id, id_mesa, id_insumo, cantidad, id_usuario, notas, estado, fecha_hora, cliente, tipo_pedido) 
             VALUES ('$id', '$idMesa', '$idInsumo', $cantidad, '$idUsuario', '$notas', '$estado', '$fecha', '$cliente', '$tipo')
             ON DUPLICATE KEY UPDATE cantidad=$cantidad, notas='$notas', estado='$estado', cliente='$cliente', tipo_pedido='$tipo'";
     
-    if($conn->query($sql)) send_response(["status" => "success"]);
+    if($conn->query($sql)) send_response(["status" => "success", "id" => $id]);
     else send_response(["status" => "error", "message" => $conn->error]);
 }
 elseif ($action === 'delete_temp_order') {
-    $id = $_GET['id'];
+    $id = $conn->real_escape_string($_GET['id']);
     $conn->query("DELETE FROM pedidos_temporales WHERE id='$id'");
     send_response(["status" => "success"]);
 }
 elseif ($action === 'clear_table') {
-    $idMesa = $_GET['id_mesa'];
+    $idMesa = $conn->real_escape_string($_GET['id_mesa']);
     $conn->query("DELETE FROM pedidos_temporales WHERE id_mesa='$idMesa'");
     send_response(["status" => "success"]);
 }
 elseif ($action === 'update_order_status') {
     $d = json_decode(file_get_contents("php://input"), true);
-    $id = $d['id'];
-    $estado = $d['estado'];
+    $id = $conn->real_escape_string($d['id']);
+    $estado = $conn->real_escape_string($d['estado']);
     $conn->query("UPDATE pedidos_temporales SET estado='$estado' WHERE id='$id'");
     send_response(["status" => "success"]);
 }
 elseif ($action === 'update_table_meta') {
-    // Actualiza cliente y tipo para TODOS los items de la mesa
     $d = json_decode(file_get_contents("php://input"), true);
-    $idMesa = $d['id_mesa'];
+    $idMesa = $conn->real_escape_string($d['id_mesa']);
     $cliente = $conn->real_escape_string($d['cliente']);
-    $tipo = $d['tipo_pedido'];
+    $tipo = $conn->real_escape_string($d['tipo_pedido']);
     $conn->query("UPDATE pedidos_temporales SET cliente='$cliente', tipo_pedido='$tipo' WHERE id_mesa='$idMesa'");
     send_response(["status" => "success"]);
 }
 elseif ($action === 'update_profile') {
     $d = json_decode(file_get_contents("php://input"), true);
     $id = $conn->real_escape_string($d['id']);
+    
+    if ($currentUser['id'] !== $id) {
+        send_response(["status" => "error", "message" => "No autorizado para editar este perfil"], 403);
+    }
+
     $nombre = $conn->real_escape_string($d['nombre']);
     $email = $conn->real_escape_string($d['email']);
     
@@ -295,20 +410,30 @@ elseif ($action === 'update_profile') {
 elseif ($action === 'change_password') {
     $d = json_decode(file_get_contents("php://input"), true);
     $id = $conn->real_escape_string($d['id']);
+    
+    if ($currentUser['id'] !== $id) {
+        send_response(["status" => "error", "message" => "No autorizado"], 403);
+    }
+
     $actual = $d['actual'];
     $nueva = $d['nueva'];
     
-    // Verificar contraseña actual
-    $check = $conn->query("SELECT id FROM usuarios WHERE id='$id' AND password_hash='$actual'");
+    $check = $conn->query("SELECT * FROM usuarios WHERE id='$id'");
     if ($check && $check->num_rows > 0) {
-        $sql = "UPDATE usuarios SET password_hash='$nueva' WHERE id='$id'";
-        if ($conn->query($sql) === TRUE) {
-            send_response(["status" => "success"]);
+        $user = $check->fetch_assoc();
+        if (password_verify($actual, $user['password_hash'])) {
+            $nuevaHash = password_hash($nueva, PASSWORD_DEFAULT);
+            $sql = "UPDATE usuarios SET password_hash='$nuevaHash' WHERE id='$id'";
+            if ($conn->query($sql) === TRUE) {
+                send_response(["status" => "success"]);
+            } else {
+                send_response(["status" => "error", "message" => $conn->error]);
+            }
         } else {
-            send_response(["status" => "error", "message" => $conn->error]);
+            send_response(["status" => "error", "message" => "Contraseña actual incorrecta"]);
         }
     } else {
-        send_response(["status" => "error", "message" => "Contraseña actual incorrecta"]);
+        send_response(["status" => "error", "message" => "Usuario no encontrado"]);
     }
 }
 

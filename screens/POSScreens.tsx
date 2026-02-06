@@ -156,6 +156,9 @@ export const ScreenOrder = () => {
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [ticketFinal, setTicketFinal] = useState<(Venta & { detalles: DetalleVenta[] }) | null>(null);
 
+    // Estado para deshabilitar clicks mientras se procesa (Mantengo variable pero NO bloquea Agregar)
+    const [procesando, setProcesando] = useState(false);
+
     useEffect(() => {
         if (!mesaId) {
             navigate('/');
@@ -177,30 +180,42 @@ export const ScreenOrder = () => {
         setTipoPedido(dbService.obtenerTipoPedido(mesaId));
     };
 
-    // Agregar Directo (Sin Modal)
-    const handleAgregar = (insumo: Insumo) => {
+    // Agregar Directo: Ahora es puramente síncrono en UI gracias al servicio
+    const handleAgregar = async (insumo: Insumo) => {
         if (!mesaId) return;
-        dbService.agregarPedidoTemporal(mesaId, insumo.id, 1, 'u1');
+
+        // Simplemente llamamos al servicio. El servicio actualiza su caché al instante.
+        await dbService.agregarPedidoTemporal(mesaId, insumo.id, 1, 'u1');
+
+        // Recargamos el estado local desde el servicio inmediatamente
+        // Esto elimina condiciones de carrera entre el estado de React y el servicio
         cargarDatosMesa();
     };
 
     // Actualizar Notas desde el Carrito
-    const handleNotaChange = (idPedido: string, nuevaNota: string) => {
-        dbService.actualizarNotasPedido(idPedido, nuevaNota);
-        // Actualizamos estado localmente para reflejo inmediato en UI sin esperar reload completo
+    const handleNotaChange = async (idPedido: string, nuevaNota: string) => {
+        // Actualizamos UI local inmediatamente para feedback visual
         setPedidos(prev => prev.map(p => p.id === idPedido ? { ...p, notas: nuevaNota } : p));
+        // Actualizamos Servicio (memoria + backend)
+        await dbService.actualizarNotasPedido(idPedido, nuevaNota);
+        // NO recargamos cargarDatosMesa() aquí para no perder el foco del input
     };
 
-    const handleEliminar = (idPedido: string) => {
-        dbService.eliminarPedidoTemporal(idPedido);
-        cargarDatosMesa();
+    const handleEliminar = async (idPedido: string) => {
+        // Optimistic UI delete
+        setPedidos(prev => prev.filter(p => p.id !== idPedido));
+        setProcesando(true);
+        await dbService.eliminarPedidoTemporal(idPedido);
+        cargarDatosMesa(); // Sincronizar final
+        setProcesando(false);
     };
 
-    // Botón Enviar Cocina (Solo cambia estado, no imprime)
-    const handleEnviarCocina = () => {
+    const handleEnviarCocina = async () => {
         if (!mesaId) return;
-        dbService.enviarOrdenCocina(mesaId);
+        setProcesando(true);
+        await dbService.enviarOrdenCocina(mesaId);
         cargarDatosMesa();
+        setProcesando(false);
     };
 
     // Botón Pre-Cuenta: Abre el modal visual
@@ -208,9 +223,11 @@ export const ScreenOrder = () => {
         setShowPrecuentaModal(true);
     };
 
-    const handleVaciarMesa = () => {
+    const handleVaciarMesa = async () => {
         if (!mesaId) return;
-        dbService.vaciarMesa(mesaId);
+        setProcesando(true);
+        await dbService.vaciarMesa(mesaId);
+        setProcesando(false);
         navigate('/');
     };
 
@@ -281,7 +298,7 @@ export const ScreenOrder = () => {
                 message="¿Estás seguro que deseas eliminar todos los pedidos de esta mesa? Esta acción no se puede deshacer."
             />
 
-            {/* Modal de Pre-cuenta (Estado de Cuenta) */}
+            {/* Modal de Pre-cuenta (Estado de Cuenta) - DISEÑO ACTUALIZADO */}
             {showPrecuentaModal && (
                 <div className="fixed inset-0 z-[60] bg-black/90 flex items-center justify-center p-4 backdrop-blur-md">
                     <div className="bg-white text-black p-8 rounded shadow-2xl w-80 font-mono text-sm relative animate-in zoom-in duration-200 flex flex-col max-h-[90vh]">
@@ -302,6 +319,7 @@ export const ScreenOrder = () => {
                             </div>
                         </div>
 
+                        {/* LISTA DE PRODUCTOS Y TOTALES SCROLLABLE - IGUAL QUE TICKET FINAL */}
                         <div className="flex-1 overflow-y-auto mb-4 custom-scrollbar pr-1">
                             <div className="mb-4">
                                 <div className="flex justify-between text-xs font-bold border-b border-black mb-2 pb-1">
@@ -526,7 +544,8 @@ export const ScreenOrder = () => {
                 </div>
 
                 {/* Products Grid */}
-                <div className="flex-1 overflow-y-auto p-4">
+                <div className="flex-1 overflow-y-auto p-4 relative">
+                    {/* Overlay de carga ELIMINADO para evitar parpadeo */}
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                         {itemsFiltrados.map(item => (
                             <button
@@ -580,12 +599,11 @@ export const ScreenOrder = () => {
                             value={cliente}
                             onChange={(e) => handleUpdateCliente(e.target.value)}
                         />
-                        {/* Selector Tipo fue MOVIDO al header central */}
                     </div>
                 </div>
 
                 {/* Lista de Items */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                <div className="flex-1 overflow-y-auto p-4 space-y-2 relative">
                     {pedidos.length === 0 ? (
                         <div className="h-full flex flex-col items-center justify-center text-slate-400 dark:text-gray-500 opacity-50">
                             <span className="material-symbols-outlined text-5xl mb-2">shopping_cart</span>
@@ -646,9 +664,14 @@ export const ScreenOrder = () => {
                     {hayPedidosSinEnviar && (
                         <button
                             onClick={handleEnviarCocina}
-                            className="w-full mb-3 bg-orange-500/10 border border-orange-500 text-orange-600 dark:text-orange-500 font-bold py-2 rounded-lg flex items-center justify-center gap-2 transition-all animate-pulse hover:bg-orange-500/20"
+                            disabled={procesando}
+                            className="w-full mb-3 bg-orange-500/10 border border-orange-500 text-orange-600 dark:text-orange-500 font-bold py-2 rounded-lg flex items-center justify-center gap-2 transition-all animate-pulse hover:bg-orange-500/20 disabled:opacity-50"
                         >
-                            <span className="material-symbols-outlined text-[20px]">skillet</span>
+                            {procesando ? (
+                                <div className="w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+                            ) : (
+                                <span className="material-symbols-outlined text-[20px]">skillet</span>
+                            )}
                             <span className="text-sm">ENVIAR A COCINA</span>
                         </button>
                     )}
