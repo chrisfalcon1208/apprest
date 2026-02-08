@@ -91,8 +91,8 @@ export interface MesaEstado {
 }
 
 export interface ChatMessage {
-  id: string;
-  role: 'user' | 'model';
-  text: string;
-  timestamp: Date;
+    id: string;
+    role: 'user' | 'model';
+    text: string;
+    timestamp: Date;
 }

@@ -46,7 +46,7 @@ const App = () => {
 
         // Escuchar cambios en la configuración (ej. si cambian el nombre en Admin)
         window.addEventListener('apprest-config-updated', updateTitle);
-
+        
         return () => {
             window.removeEventListener('apprest-config-updated', updateTitle);
         };
@@ -62,7 +62,7 @@ const App = () => {
         return <>{children}</>;
     };
 
-    if (loading) return <div className="h-screen w-full flex items-center justify-center bg-[#102216] text-white">Iniciando Sistema...</div>;
+    if(loading) return <div className="h-screen w-full flex items-center justify-center bg-[#102216] text-white">Iniciando Sistema...</div>;
 
     return (
         <HashRouter>
@@ -78,12 +78,12 @@ const App = () => {
                 {/* Nueva ruta de ventas */}
                 <Route path="/sales" element={<ProtectedRoute><ScreenDailyReport /></ProtectedRoute>} />
                 <Route path="/kds" element={<ProtectedRoute><ScreenKDS /></ProtectedRoute>} />
-
+                
                 {/* Protected Admin Routes */}
                 <Route path="/admin" element={<ProtectedRoute><ScreenAdminDashboard /></ProtectedRoute>} />
                 <Route path="/admin/config" element={<ProtectedRoute><ScreenConfig /></ProtectedRoute>} />
                 <Route path="/admin/profile" element={<ProtectedRoute><ScreenUserConfig /></ProtectedRoute>} />
-
+                
                 {/* New Inventory Management Routes */}
                 <Route path="/admin/products" element={<ProtectedRoute><ScreenProductManager /></ProtectedRoute>} />
                 <Route path="/admin/categories" element={<ProtectedRoute><ScreenCategoryManager /></ProtectedRoute>} />

@@ -14,6 +14,26 @@ let pedidos_temporales: PedidoTemporal[] = [];
 let mesa_metadata: Record<string, { cliente: string; tipoPedido: 'LOCAL' | 'LLEVAR' | 'DOMICILIO' }> = {};
 let usuarioActual: Usuario | null = null;
 
+// --- REAL-TIME SYNC (BroadcastChannel) ---
+// Canal para comunicar pestañas del mismo navegador (Ej. Pantalla Extendida)
+const syncChannel = new BroadcastChannel('apprest_sync_channel');
+
+syncChannel.onmessage = (event) => {
+    if (event.data === 'REFRESH_DATA') {
+        // Si otra pestaña dice que hubo cambios, recargamos silenciosamente
+        dbService.cargarDatosGenerales();
+    }
+};
+
+const notifyChange = () => {
+    // 1. Avisar a otras pestañas
+    syncChannel.postMessage('REFRESH_DATA');
+    // 2. Avisar a la pestaña actual (React components)
+    // Nota: cargarDatosGenerales ya dispara el evento 'apprest-config-updated', 
+    // pero a veces queremos forzar el fetch inmediato antes.
+    dbService.cargarDatosGenerales();
+};
+
 const safeDate = (dateStr: any) => {
     if (typeof dateStr === 'string' && dateStr.indexOf('T') === -1) {
         dateStr = dateStr.replace(' ', 'T');
@@ -144,6 +164,7 @@ export const dbService = {
                     mesa_metadata = {};
                 }
 
+                // Despachar evento para que React se actualice
                 window.dispatchEvent(new Event('apprest-config-updated'));
             }
         } catch (e) {
@@ -171,10 +192,7 @@ export const dbService = {
         try {
             const res = await fetch(`${API_URL}?action=login`, {
                 method: 'POST',
-                // IMPORTANTE: Header necesario para que PHP decodifique json://input
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, password: password_hash })
             });
             const data = await res.json();
@@ -203,18 +221,12 @@ export const dbService = {
         try {
             const res = await fetch(`${API_URL}?action=register`, {
                 method: 'POST',
-                // IMPORTANTE: Header necesario para que PHP decodifique json://input
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ nombre, email, password: pass, rol })
             });
             const data = await res.json();
-            if (data.status === 'success') {
-                return true;
-            } else {
-                throw new Error(data.message || "Error al registrar");
-            }
+            if (data.status === 'success') return true;
+            else throw new Error(data.message || "Error al registrar");
         } catch (e: any) {
             throw new Error(e.message || "Error de conexión");
         }
@@ -233,9 +245,7 @@ export const dbService = {
                 localStorage.setItem('apprest_user_session', JSON.stringify(usuarioActual));
             }
             return usuarioActual!;
-        } else {
-            throw new Error(data.message || "Error al actualizar perfil");
-        }
+        } else throw new Error(data.message || "Error al actualizar perfil");
     },
 
     cambiarPasswordUsuario: async (id: string, actual: string, nueva: string) => {
@@ -245,9 +255,7 @@ export const dbService = {
         });
         if (!res) throw new Error("No autorizado");
         const data = await res.json();
-        if (data.status !== 'success') {
-            throw new Error(data.message || "Error al cambiar contraseña");
-        }
+        if (data.status !== 'success') throw new Error(data.message || "Error al cambiar contraseña");
         return true;
     },
 
@@ -257,54 +265,39 @@ export const dbService = {
     actualizarInfoNegocio: async (datos: InformacionNegocio) => {
         info_negocio = datos;
         await authorizedFetch(`${API_URL}?action=save_config`, { method: 'POST', body: JSON.stringify(datos) });
-        window.dispatchEvent(new Event('apprest-config-updated'));
+        notifyChange();
     },
 
     obtenerCategorias: () => categorias,
     guardarCategoria: async (cat: Categoria) => {
-        // Enviar al backend SIN generar ID aquí. El backend lo genera si está vacío.
         const res = await authorizedFetch(`${API_URL}?action=save_category`, { method: 'POST', body: JSON.stringify(cat) });
-        if (res && res.ok) {
-            const data = await res.json();
-            if (data.status === 'success' && data.id) {
-                cat.id = data.id; // Actualizar con ID real
-                const idx = categorias.findIndex(c => c.id === cat.id);
-                if (idx >= 0) categorias[idx] = cat; else categorias.push(cat);
-            }
-        }
+        if (res && res.ok) notifyChange();
     },
     eliminarCategoria: async (id: string) => {
         if (insumos.some(i => i.categoria_id === id)) throw new Error("Tiene productos asociados");
-        categorias = categorias.filter(c => c.id !== id);
         await authorizedFetch(`${API_URL}?action=delete_category&id=${id}`);
+        notifyChange();
     },
 
     obtenerInsumos: () => insumos,
     obtenerInsumoPorId: (id: string) => insumos.find(i => i.id === id),
     guardarInsumo: async (insumo: Insumo) => {
         const res = await authorizedFetch(`${API_URL}?action=save_product`, { method: 'POST', body: JSON.stringify(insumo) });
-        if (res && res.ok) {
-            const data = await res.json();
-            if (data.status === 'success' && data.id) {
-                insumo.id = data.id;
-                const idx = insumos.findIndex(i => i.id === insumo.id);
-                if (idx >= 0) insumos[idx] = insumo; else insumos.push(insumo);
-            }
-        }
+        if (res && res.ok) notifyChange();
     },
     eliminarInsumo: async (id: string) => {
-        insumos = insumos.filter(i => i.id !== id);
         await authorizedFetch(`${API_URL}?action=delete_product&id=${id}`);
+        notifyChange();
     },
 
     obtenerPedidosMesa: (idMesa: string) => pedidos_temporales.filter(p => p.id_mesa === idMesa),
 
-    // --- LÓGICA CORE: Agregar con UI Optimista y Agrupación Estricta ---
+    // --- LÓGICA CORE: Agregar con Sync ---
     agregarPedidoTemporal: async (idMesa: string, idInsumo: string, cantidad: number, idUsuario: string) => {
         const insumo = insumos.find(i => i.id === idInsumo);
         if (!insumo) return;
 
-        // CORRECCIÓN: Búsqueda estricta. Solo agrupar si NO tiene notas.
+        // Búsqueda en local para optimismo
         const existente = pedidos_temporales.find(p =>
             p.id_mesa === idMesa &&
             p.id_insumo === idInsumo &&
@@ -313,18 +306,15 @@ export const dbService = {
         );
 
         if (existente) {
-            // Actualización síncrona en memoria (EVITA SALTOS DE NÚMEROS)
+            // Actualización optimista local
             existente.cantidad += cantidad;
 
-            // Enviar al backend en background
             const payload = {
                 ...existente,
                 fecha_hora: formatMySQLDate(existente.fecha_hora)
             };
-            authorizedFetch(`${API_URL}?action=save_temp_order`, { method: 'POST', body: JSON.stringify(payload) }).catch(console.error);
-
+            await authorizedFetch(`${API_URL}?action=save_temp_order`, { method: 'POST', body: JSON.stringify(payload) });
         } else {
-            // Nuevo Item en memoria
             const tipo = mesa_metadata[idMesa]?.tipoPedido || 'LOCAL';
             const cliente = mesa_metadata[idMesa]?.cliente || '';
             const tempId = 'temp_' + Date.now() + Math.random().toString(36).substr(2, 5);
@@ -342,39 +332,26 @@ export const dbService = {
                 tipo_pedido: tipo
             };
 
-            // INSERCIÓN SÍNCRONA: La "fuente de la verdad" se actualiza al instante
+            // Inserción optimista
             pedidos_temporales.push(nuevoPedido);
 
-            // Backend
             const payload = {
                 ...nuevoPedido,
-                id: '',
+                id: '', // Backend generará ID real
                 cliente,
                 fecha_hora: formatMySQLDate(nuevoPedido.fecha_hora)
             };
 
-            try {
-                const res = await authorizedFetch(`${API_URL}?action=save_temp_order`, { method: 'POST', body: JSON.stringify(payload) });
-                if (res && res.ok) {
-                    const data = await res.json();
-                    if (data.status === 'success' && data.id) {
-                        // Reemplazo silencioso de ID
-                        const itemEnCache = pedidos_temporales.find(p => p.id === tempId);
-                        if (itemEnCache) itemEnCache.id = data.id;
-                    }
-                }
-            } catch (e) {
-                console.error("Error guardando pedido", e);
-            }
+            await authorizedFetch(`${API_URL}?action=save_temp_order`, { method: 'POST', body: JSON.stringify(payload) });
         }
+        notifyChange();
     },
 
-    actualizarNotasPedido: async (id: string, notas: string) => {
+    // --- NUEVO: Actualizar cantidad de un pedido existente (para restar o sumar directamente) ---
+    actualizarCantidadPedido: async (id: string, cantidad: number) => {
         const p = pedidos_temporales.find(x => x.id === id);
         if (p) {
-            // ACTUALIZACIÓN SÍNCRONA: Evita que el intervalo sobrescriba lo que escribes
-            p.notas = notas;
-
+            p.cantidad = cantidad;
             const cliente = mesa_metadata[p.id_mesa]?.cliente || '';
             const payload = {
                 ...p,
@@ -382,30 +359,54 @@ export const dbService = {
                 fecha_hora: formatMySQLDate(p.fecha_hora)
             };
             await authorizedFetch(`${API_URL}?action=save_temp_order`, { method: 'POST', body: JSON.stringify(payload) });
+            notifyChange();
+        }
+    },
+
+    actualizarNotasPedido: async (id: string, notas: string) => {
+        const p = pedidos_temporales.find(x => x.id === id);
+        if (p) {
+            p.notas = notas;
+            const cliente = mesa_metadata[p.id_mesa]?.cliente || '';
+            const payload = {
+                ...p,
+                cliente,
+                fecha_hora: formatMySQLDate(p.fecha_hora)
+            };
+            await authorizedFetch(`${API_URL}?action=save_temp_order`, { method: 'POST', body: JSON.stringify(payload) });
+            notifyChange();
         }
     },
 
     eliminarPedidoTemporal: async (id: string) => {
+        // Optimista
         pedidos_temporales = pedidos_temporales.filter(p => p.id !== id);
         await authorizedFetch(`${API_URL}?action=delete_temp_order&id=${id}`);
+        notifyChange();
     },
 
     vaciarMesa: async (idMesa: string) => {
+        // Optimista
         pedidos_temporales = pedidos_temporales.filter(p => p.id_mesa !== idMesa);
         delete mesa_metadata[idMesa];
         await authorizedFetch(`${API_URL}?action=clear_table&id_mesa=${idMesa}`);
+        notifyChange();
     },
 
-    enviarOrdenCocina: (idMesa: string) => {
-        pedidos_temporales.filter(p => p.id_mesa === idMesa && p.estado === 'sin_enviar')
-            .forEach(async p => {
+    enviarOrdenCocina: async (idMesa: string) => {
+        const promises = pedidos_temporales
+            .filter(p => p.id_mesa === idMesa && p.estado === 'sin_enviar')
+            .map(async p => {
                 p.estado = 'pendiente';
                 p.fecha_hora = new Date();
-                await authorizedFetch(`${API_URL}?action=update_order_status`, {
+                return authorizedFetch(`${API_URL}?action=update_order_status`, {
                     method: 'POST',
                     body: JSON.stringify({ id: p.id, estado: 'pendiente' })
                 });
             });
+
+        await Promise.all(promises);
+        notifyChange();
     },
 
     obtenerPedidosCocina: () => pedidos_temporales.filter(p => p.estado && ['pendiente', 'preparando', 'listo'].includes(p.estado)),
@@ -418,6 +419,7 @@ export const dbService = {
                 method: 'POST',
                 body: JSON.stringify({ id: p.id, estado })
             });
+            notifyChange();
         }
     },
 
@@ -435,6 +437,8 @@ export const dbService = {
             method: 'POST',
             body: JSON.stringify({ id_mesa: id, cliente: val, tipo_pedido: mesa_metadata[id].tipoPedido })
         });
+        // Aquí no siempre es necesario notifyChange masivo, pero ayuda a sincronizar
+        notifyChange();
     },
     obtenerNombreCliente: (id: string) => mesa_metadata[id]?.cliente || '',
 
@@ -446,6 +450,7 @@ export const dbService = {
             method: 'POST',
             body: JSON.stringify({ id_mesa: id, cliente: mesa_metadata[id].cliente, tipo_pedido: val })
         });
+        notifyChange();
     },
     obtenerTipoPedido: (id: string) => mesa_metadata[id]?.tipoPedido || 'LOCAL',
 
@@ -459,9 +464,8 @@ export const dbService = {
 
         const maxC = ventas.reduce((max, v) => (v.consecutivo > max ? v.consecutivo : max), 0);
 
-        // Creamos objeto venta SIN ID todavía
         const nuevaVenta: Venta = {
-            id: '', // Se generará en backend
+            id: '',
             consecutivo: maxC + 1,
             id_mesa: idMesa,
             cliente: cliente || "Publico General",
@@ -477,7 +481,7 @@ export const dbService = {
         const nuevosDetalles: DetalleVenta[] = [];
         peds.forEach(p => {
             nuevosDetalles.push({
-                id: '', // Se generará en backend
+                id: '',
                 id_venta: '',
                 id_insumo: p.id_insumo,
                 codigo_producto: p.insumo_snapshot?.codigo || 'X',
@@ -501,29 +505,18 @@ export const dbService = {
             detalles: nuevosDetalles
         };
 
-        // Enviamos al backend y esperamos ID real
+        // Background sync
         authorizedFetch(`${API_URL}?action=save_sale`, { method: 'POST', body: JSON.stringify(payload) })
             .then(async (res) => {
-                if (res && res.ok) {
-                    const data = await res.json();
-                    if (data.status === 'success' && data.id) {
-                        // Actualizar ID real en cache local
-                        nuevaVenta.id = data.id;
-                        nuevosDetalles.forEach(d => d.id_venta = data.id); // Vincular detalles
-                        ventas.push(nuevaVenta);
-                        // Recargar todo para asegurar IDs de detalles
-                        dbService.cargarDatosGenerales();
-                    }
-                }
+                if (res && res.ok) notifyChange();
             })
             .catch(console.error);
 
-        // Limpieza local inmediata para UX (Optimistic)
+        // Optimistic cleanup
         pedidos_temporales = pedidos_temporales.filter(p => p.id_mesa !== idMesa);
         delete mesa_metadata[idMesa];
         authorizedFetch(`${API_URL}?action=clear_table&id_mesa=${idMesa}`).catch(console.error);
 
-        // Retornamos objeto temporal para imprimir ticket, aunque el ID sea vacío momentáneamente
         return { ...nuevaVenta, detalles: nuevosDetalles };
     },
 
@@ -533,4 +526,5 @@ export const dbService = {
     _getDetallesRaw: () => detalles_venta
 };
 
+// Carga inicial
 dbService.cargarDatosGenerales();

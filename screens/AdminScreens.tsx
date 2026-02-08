@@ -19,6 +19,7 @@ export const AdminLayout = ({
 }) => {
     // Usar estado para permitir actualizaciones dinámicas sin recargar
     const [negocio, setNegocio] = useState(dbService.obtenerInfoNegocio());
+    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
     useEffect(() => {
         // Escuchar evento personalizado para actualizar info
@@ -30,10 +31,20 @@ export const AdminLayout = ({
     }, []);
 
     return (
-        <div className="flex h-screen w-full overflow-hidden bg-slate-50 dark:bg-background-dark text-slate-900 dark:text-white">
-            <aside className="hidden md:flex flex-col w-64 bg-slate-100 dark:bg-surface-dark border-r border-slate-200 dark:border-[#23482f] h-full flex-shrink-0">
+        <div className="flex h-screen w-full overflow-hidden bg-slate-50 dark:bg-background-dark text-slate-900 dark:text-white relative">
+
+            {/* Overlay para móvil */}
+            {mobileMenuOpen && (
+                <div
+                    className="fixed inset-0 bg-black/50 z-20 md:hidden backdrop-blur-sm"
+                    onClick={() => setMobileMenuOpen(false)}
+                ></div>
+            )}
+
+            {/* Sidebar (Responsive) */}
+            <aside className={`fixed md:static inset-y-0 left-0 z-30 w-64 bg-slate-100 dark:bg-surface-dark border-r border-slate-200 dark:border-[#23482f] h-full flex-shrink-0 transition-transform duration-300 transform ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
                 <div className="flex flex-col h-full p-4">
-                    <div className="flex items-center gap-3 px-2 py-4 mb-6">
+                    <div className="flex items-center gap-3 px-2 py-4 mb-6 relative">
                         <div className="bg-center bg-no-repeat bg-cover rounded-full size-10 border-2 border-primary transition-all duration-300" style={{ backgroundImage: `url("${negocio.logo}")` }}></div>
                         <div className="flex flex-col">
                             <h1 className="text-slate-900 dark:text-white text-lg font-bold leading-tight transition-all duration-300">{negocio.nombre}</h1>
@@ -41,9 +52,16 @@ export const AdminLayout = ({
                                 {variant === 'admin' ? 'Administración' : 'Inventario'}
                             </p>
                         </div>
+                        {/* Cerrar menú en móvil */}
+                        <button
+                            onClick={() => setMobileMenuOpen(false)}
+                            className="absolute top-2 right-0 md:hidden text-slate-500 dark:text-white"
+                        >
+                            <span className="material-symbols-outlined">close</span>
+                        </button>
                     </div>
 
-                    <nav className="flex flex-col gap-2 flex-1">
+                    <nav className="flex flex-col gap-2 flex-1 overflow-y-auto">
                         <SidebarLink to="/" icon="storefront" label="Volver al TPV" />
 
                         {/* Menú para Panel Admin */}
@@ -66,18 +84,27 @@ export const AdminLayout = ({
                     </nav>
                 </div>
             </aside>
+
             <main className="flex-1 flex flex-col h-full min-w-0 bg-slate-50 dark:bg-background-dark overflow-hidden">
-                <header className="flex items-center justify-between h-16 px-6 border-b border-slate-200 dark:border-[#23482f] bg-white dark:bg-surface-dark shrink-0 z-10">
-                    <div className="flex items-center gap-2">
-                        <span className="material-symbols-outlined text-primary">
-                            {variant === 'admin' ? 'admin_panel_settings' : 'inventory'}
-                        </span>
-                        <h2 className="text-slate-900 dark:text-white text-lg font-bold">{title}</h2>
+                <header className="flex items-center justify-between h-16 px-4 md:px-6 border-b border-slate-200 dark:border-[#23482f] bg-white dark:bg-surface-dark shrink-0 z-10">
+                    <div className="flex items-center gap-3">
+                        <button
+                            className="md:hidden p-2 -ml-2 text-slate-600 dark:text-white"
+                            onClick={() => setMobileMenuOpen(true)}
+                        >
+                            <span className="material-symbols-outlined">menu</span>
+                        </button>
+                        <div className="flex items-center gap-2">
+                            <span className="material-symbols-outlined text-primary">
+                                {variant === 'admin' ? 'admin_panel_settings' : 'inventory'}
+                            </span>
+                            <h2 className="text-slate-900 dark:text-white text-lg font-bold truncate max-w-[200px] sm:max-w-none">{title}</h2>
+                        </div>
                     </div>
                     {/* Añadir Toggle a Admin también para consistencia */}
                     <ThemeToggle />
                 </header>
-                <div className="flex-1 overflow-y-auto p-6 scroll-smooth">
+                <div className="flex-1 overflow-y-auto p-4 md:p-6 scroll-smooth">
                     {children}
                 </div>
             </main>
@@ -175,7 +202,7 @@ export const ScreenAdminDashboard = () => {
                 <div className="bg-white dark:bg-surface-dark rounded-xl border border-slate-200 dark:border-[#23482f] overflow-hidden flex flex-col">
                     <div className="p-6 border-b border-slate-200 dark:border-[#23482f]"><h3 className="text-slate-900 dark:text-white text-lg font-bold">Top Productos (Ingresos)</h3></div>
                     <div className="overflow-x-auto flex-1">
-                        <table className="w-full text-left text-sm text-slate-500 dark:text-gray-400">
+                        <table className="w-full text-left text-sm text-slate-500 dark:text-gray-400 min-w-[500px]">
                             <thead className="bg-slate-100 dark:bg-[#102216] text-slate-700 dark:text-gray-200 uppercase font-bold text-xs">
                                 <tr>
                                     <th className="px-6 py-3">Producto</th>
@@ -377,36 +404,36 @@ export const ScreenReports = () => {
     return (
         <AdminLayout title="Análisis y Reportes" variant="admin">
             {/* Barra de Filtros para Gráficas de Corto Plazo */}
-            <div className="flex flex-wrap items-center justify-between bg-white dark:bg-surface-dark border border-slate-200 dark:border-[#23482f] p-4 rounded-xl mb-6 gap-4">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between bg-white dark:bg-surface-dark border border-slate-200 dark:border-[#23482f] p-4 rounded-xl mb-6 gap-4">
                 <div className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-primary">filter_alt</span>
                     <span className="text-slate-900 dark:text-white font-bold text-sm">Filtro Período (Horario/Semanal)</span>
                 </div>
-                <div className="flex flex-wrap items-center gap-3">
-                    <div className="flex items-center gap-2 bg-slate-100 dark:bg-[#162b1e] border border-slate-300 dark:border-[#23482f] rounded-lg p-1">
-                        <div className="flex flex-col px-2">
+                <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                    <div className="flex items-center gap-2 bg-slate-100 dark:bg-[#162b1e] border border-slate-300 dark:border-[#23482f] rounded-lg p-1 w-full md:w-auto">
+                        <div className="flex flex-col px-2 flex-1">
                             <label className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider">Desde</label>
                             <input
                                 type="date"
                                 value={filterStartDate}
                                 onChange={(e) => setFilterStartDate(e.target.value)}
-                                className="bg-transparent text-slate-900 dark:text-white text-sm focus:outline-none p-0 border-none w-28"
+                                className="bg-transparent text-slate-900 dark:text-white text-sm focus:outline-none p-0 border-none w-full"
                             />
                         </div>
                         <div className="h-6 w-px bg-slate-300 dark:bg-[#23482f]"></div>
-                        <div className="flex flex-col px-2">
+                        <div className="flex flex-col px-2 flex-1">
                             <label className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider">Hasta</label>
                             <input
                                 type="date"
                                 value={filterEndDate}
                                 onChange={(e) => setFilterEndDate(e.target.value)}
-                                className="bg-transparent text-slate-900 dark:text-white text-sm focus:outline-none p-0 border-none w-28"
+                                className="bg-transparent text-slate-900 dark:text-white text-sm focus:outline-none p-0 border-none w-full"
                             />
                         </div>
                     </div>
                     <button
                         onClick={handleResetDates}
-                        className="h-[46px] w-[46px] flex items-center justify-center bg-slate-100 dark:bg-[#162b1e] border border-slate-300 dark:border-[#23482f] rounded-lg text-slate-500 dark:text-[#92c9a4] hover:text-slate-900 dark:hover:text-white hover:border-primary/50 hover:bg-slate-200 dark:hover:bg-[#1f3a2a] transition-all"
+                        className="h-[46px] w-[46px] flex items-center justify-center bg-slate-100 dark:bg-[#162b1e] border border-slate-300 dark:border-[#23482f] rounded-lg text-slate-500 dark:text-[#92c9a4] hover:text-slate-900 dark:hover:text-white hover:border-primary/50 hover:bg-slate-200 dark:hover:bg-[#1f3a2a] transition-all ml-auto md:ml-0"
                         title="Reiniciar a Hoy"
                     >
                         <span className="material-symbols-outlined">restart_alt</span>
@@ -463,15 +490,15 @@ export const ScreenReports = () => {
 
                 {/* Monthly Sales (Con Filtro Exclusivo de Año) */}
                 <div className="bg-white dark:bg-surface-dark border border-slate-200 dark:border-[#23482f] rounded-xl p-6 lg:col-span-2 h-96 flex flex-col">
-                    <div className="flex items-center justify-between mb-4">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-4">
                         <h3 className="text-slate-900 dark:text-white font-bold flex items-center gap-2">
                             <span className="material-symbols-outlined text-yellow-500">bar_chart</span>
                             Desempeño Mensual
                         </h3>
 
-                        <div className="flex items-center gap-6">
+                        <div className="flex flex-wrap items-center gap-6 w-full sm:w-auto justify-between sm:justify-end">
                             {/* Stats Anuales */}
-                            <div className="hidden sm:flex items-center gap-4 border-r border-slate-200 dark:border-[#23482f] pr-6">
+                            <div className="flex items-center gap-4 border-r border-slate-200 dark:border-[#23482f] pr-6">
                                 <div className="flex flex-col items-end">
                                     <span className="text-[10px] text-gray-500 dark:text-gray-400 uppercase font-bold">Total Año</span>
                                     <span className="text-slate-900 dark:text-white font-mono font-bold">${monthlyTotal.toFixed(2)}</span>

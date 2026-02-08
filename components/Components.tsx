@@ -118,7 +118,7 @@ export const Button = ({ children, onClick, variant = 'primary', className = "",
 export const ConfirmModal = ({ isOpen, onClose, onConfirm, title, message }: any) => {
     if (!isOpen) return null;
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
             <div className="bg-white dark:bg-surface-dark border border-slate-200 dark:border-[#23482f] rounded-xl p-6 max-w-sm w-full shadow-2xl animate-in fade-in zoom-in duration-200">
                 <div className="flex items-center gap-3 mb-3 text-red-500 dark:text-red-400">
                     <span className="material-symbols-outlined text-3xl">warning</span>

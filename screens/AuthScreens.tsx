@@ -32,6 +32,8 @@ export const LoginScreen = ({ onLogin }: { onLogin: () => void }) => {
             // Login es ahora una promesa async
             const success = await dbService.login(email, password);
             if (success) {
+                // Recargar datos operativos con la nueva sesión
+                await dbService.cargarDatosGenerales();
                 onLogin();
                 navigate('/');
             } else {

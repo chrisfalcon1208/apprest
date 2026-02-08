@@ -12,7 +12,7 @@ export const ScreenAIHub = () => {
             <aside className="hidden md:flex flex-col w-64 bg-surface-dark border-r border-[#23482f] h-full flex-shrink-0">
                 <div className="flex flex-col h-full p-4">
                     <div className="flex items-center gap-3 px-2 py-4 mb-6">
-                        <div className="bg-center bg-no-repeat bg-cover rounded-full size-10 border-2 border-primary" style={{ backgroundImage: `url("${negocio.logo}")` }}></div>
+                        <div className="bg-center bg-no-repeat bg-cover rounded-full size-10 border-2 border-primary" style={{backgroundImage: `url("${negocio.logo}")`}}></div>
                         <div className="flex flex-col"><h1 className="text-white text-lg font-bold leading-tight">{negocio.nombre}</h1><p className="text-[#92c9a4] text-xs font-mono">Hub IA</p></div>
                     </div>
                     <nav className="flex flex-col gap-2 flex-1">
@@ -30,22 +30,22 @@ export const ScreenAIHub = () => {
                 </div>
             </aside>
             <main className="flex-1 flex flex-col h-full min-w-0 bg-background-dark overflow-hidden relative">
-                {/* Decorative background */}
-                <div className="absolute inset-0 opacity-5 pointer-events-none" style={{ backgroundImage: 'radial-gradient(#13ec5b 1px, transparent 1px)', backgroundSize: '32px 32px' }}></div>
-
-                <header className="flex items-center justify-between h-16 px-6 border-b border-[#23482f] bg-surface-dark shrink-0 z-10">
+                 {/* Decorative background */}
+                 <div className="absolute inset-0 opacity-5 pointer-events-none" style={{backgroundImage: 'radial-gradient(#13ec5b 1px, transparent 1px)', backgroundSize: '32px 32px'}}></div>
+                 
+                 <header className="flex items-center justify-between h-16 px-6 border-b border-[#23482f] bg-surface-dark shrink-0 z-10">
                     <div className="flex items-center gap-2"><span className="material-symbols-outlined text-primary">smart_toy</span><h2 className="text-white text-lg font-bold">
                         {activeTab === 'chat' && "Asistente de Chat IA"}
                         {activeTab === 'generate' && "Generador de Imágenes"}
                         {activeTab === 'analyze' && "Análisis Multimedia (Img/Video)"}
                     </h2></div>
-                </header>
+                 </header>
 
-                <div className="flex-1 overflow-y-auto p-6 scroll-smooth z-10">
+                 <div className="flex-1 overflow-y-auto p-6 scroll-smooth z-10">
                     {activeTab === 'chat' && <ChatFeature />}
                     {activeTab === 'generate' && <ImageGenFeature />}
                     {activeTab === 'analyze' && <AnalysisFeature />}
-                </div>
+                 </div>
             </main>
         </div>
     );
@@ -65,13 +65,13 @@ const ChatFeature = () => {
         if (!input.trim() || loading) return;
         const userMsg = input;
         setInput("");
-
+        
         const newHistory = [...messages, { role: 'user' as const, parts: [{ text: userMsg }] }];
         setMessages(newHistory);
         setLoading(true);
 
         const responseText = await sendChatMessage(newHistory, userMsg);
-
+        
         setMessages([...newHistory, { role: 'model', parts: [{ text: responseText }] }]);
         setLoading(false);
         setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
@@ -91,7 +91,7 @@ const ChatFeature = () => {
                 <div ref={messagesEndRef} />
             </div>
             <div className="p-4 bg-[#102216] border-t border-[#23482f] flex gap-3">
-                <input
+                <input 
                     className="flex-1 bg-[#162b1e] border border-[#23482f] rounded-lg px-4 text-white focus:outline-none focus:border-primary"
                     placeholder="Pregunta sobre recetas, inventario, etc..."
                     value={input}
@@ -131,7 +131,7 @@ const ImageGenFeature = () => {
                     <div className="flex flex-col gap-4">
                         <div>
                             <label className="text-xs text-[#92c9a4] uppercase font-bold mb-2 block">Prompt (Descripción)</label>
-                            <textarea
+                            <textarea 
                                 className="w-full h-32 bg-[#162b1e] border border-[#23482f] rounded-lg p-3 text-white focus:border-primary resize-none"
                                 placeholder="Una hamburguesa gourmet en una mesa de madera con iluminación dramática..."
                                 value={prompt}
@@ -142,7 +142,7 @@ const ImageGenFeature = () => {
                             <label className="text-xs text-[#92c9a4] uppercase font-bold mb-2 block">Resolución</label>
                             <div className="flex gap-2">
                                 {['1K', '2K', '4K'].map((s) => (
-                                    <button
+                                    <button 
                                         key={s}
                                         onClick={() => setSize(s as any)}
                                         className={`flex-1 py-2 rounded border font-medium transition-all ${size === s ? 'bg-primary border-primary text-background-dark' : 'bg-transparent border-[#23482f] text-white hover:border-primary/50'}`}
@@ -201,7 +201,7 @@ const AnalysisFeature = () => {
         reader.onload = async () => {
             const base64 = (reader.result as string).split(',')[1];
             let analysisText = "";
-
+            
             if (file.type.startsWith('image/')) {
                 analysisText = await analyzeUploadedImage(base64, file.type, prompt);
             } else if (file.type.startsWith('video/')) {
@@ -216,7 +216,7 @@ const AnalysisFeature = () => {
 
     return (
         <div className="max-w-4xl mx-auto h-full flex flex-col gap-6">
-            <div className="bg-surface-dark border border-[#23482f] rounded-xl p-6">
+             <div className="bg-surface-dark border border-[#23482f] rounded-xl p-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div className="flex flex-col gap-4">
                         <div className="border-2 border-dashed border-[#23482f] hover:border-primary/50 rounded-xl p-8 text-center transition-colors cursor-pointer relative group bg-[#162b1e]">
@@ -236,11 +236,11 @@ const AnalysisFeature = () => {
                         )}
                     </div>
                     <div className="flex flex-col gap-4">
-                        <Input
-                            label="Pregunta de Análisis"
-                            value={prompt}
-                            onChange={(e: any) => setPrompt(e.target.value)}
-                            placeholder="ej., ¿Qué ingredientes hay en este plato?"
+                        <Input 
+                            label="Pregunta de Análisis" 
+                            value={prompt} 
+                            onChange={(e:any) => setPrompt(e.target.value)}
+                            placeholder="ej., ¿Qué ingredientes hay en este plato?" 
                         />
                         <Button onClick={handleAnalyze} disabled={!file || loading}>
                             {loading ? "Analizando..." : "Ejecutar Análisis"}
@@ -254,7 +254,7 @@ const AnalysisFeature = () => {
                         </div>
                     </div>
                 </div>
-            </div>
+             </div>
         </div>
     );
 };

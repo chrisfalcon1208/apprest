@@ -13,13 +13,13 @@ export const ScreenProductManager = () => {
     const [subiendoImg, setSubiendoImg] = useState(false);
 
     // Modal State
-    const [itemToDelete, setItemToDelete] = useState<{ id: string, name: string } | null>(null);
+    const [itemToDelete, setItemToDelete] = useState<{id: string, name: string} | null>(null);
 
     // Search & Filter State
     const [busqueda, setBusqueda] = useState('');
-    const [filtroTipoGeneral, setFiltroTipoGeneral] = useState<'TODOS' | 'PLATILLO' | 'BEBIDA'>('TODOS');
+    const [filtroTipoGeneral, setFiltroTipoGeneral] = useState<'TODOS'|'PLATILLO'|'BEBIDA'>('TODOS');
     const [filtroCategoria, setFiltroCategoria] = useState('');
-
+    
     // Pagination State
     const [paginaActual, setPaginaActual] = useState(1);
     const [itemsPorPagina, setItemsPorPagina] = useState(10);
@@ -30,7 +30,7 @@ export const ScreenProductManager = () => {
     const [codigo, setCodigo] = useState('');
     const [precio, setPrecio] = useState('');
     const [descripcion, setDescripcion] = useState('');
-    const [tipo, setTipo] = useState<'PLATILLO' | 'BEBIDA'>('PLATILLO');
+    const [tipo, setTipo] = useState<'PLATILLO'|'BEBIDA'>('PLATILLO');
     const [categoriaId, setCategoriaId] = useState('');
     const [imagen, setImagen] = useState('');
 
@@ -61,7 +61,7 @@ export const ScreenProductManager = () => {
     };
 
     const resetForm = () => {
-        setId(''); setNombre(''); setCodigo(''); setPrecio(''); setDescripcion('');
+        setId(''); setNombre(''); setCodigo(''); setPrecio(''); setDescripcion(''); 
         setTipo('PLATILLO'); setCategoriaId(''); setImagen('');
         setModoEdicion(false);
         setErrorCodigo('');
@@ -77,11 +77,11 @@ export const ScreenProductManager = () => {
         setCategoriaId(i.categoria_id);
         setImagen(i.imagen || '');
         setModoEdicion(true);
-        setErrorCodigo('');
+        setErrorCodigo(''); 
     };
 
     const handleCodigoChange = (e: any) => {
-        const val = e.target.value.toUpperCase();
+        const val = e.target.value.toUpperCase(); 
         setCodigo(val);
         const existe = insumos.some(i => i.codigo === val && i.id !== id);
         if (existe) setErrorCodigo('¡Este código ya está registrado!');
@@ -90,8 +90,8 @@ export const ScreenProductManager = () => {
 
     const handleGuardar = async (e: React.FormEvent) => {
         e.preventDefault();
-
-        if (errorCodigo) return;
+        
+        if (errorCodigo) return; 
 
         if (!categoriaId) {
             alert("Debes seleccionar una categoría. Si no hay, créala primero.");
@@ -116,7 +116,7 @@ export const ScreenProductManager = () => {
     };
 
     const confirmarEliminar = async () => {
-        if (itemToDelete) {
+        if(itemToDelete) {
             await dbService.eliminarInsumo(itemToDelete.id);
             cargarDatos();
             setItemToDelete(null);
@@ -181,7 +181,7 @@ export const ScreenProductManager = () => {
 
     return (
         <AdminLayout title="Gestión de Productos" variant="inventory">
-            <ConfirmModal
+            <ConfirmModal 
                 isOpen={!!itemToDelete}
                 onClose={() => setItemToDelete(null)}
                 onConfirm={confirmarEliminar}
@@ -198,27 +198,27 @@ export const ScreenProductManager = () => {
                                 <Input label="Código" value={codigo} onChange={handleCodigoChange} required placeholder="Ej. CERV01" />
                                 {errorCodigo && <p className="text-red-500 text-xs mt-1 font-bold animate-pulse">{errorCodigo}</p>}
                             </div>
-                            <Input label="Nombre" value={nombre} onChange={(e: any) => setNombre(e.target.value)} required />
+                            <Input label="Nombre" value={nombre} onChange={(e:any)=>setNombre(e.target.value)} required />
                             <div className="grid grid-cols-2 gap-2">
-                                <Input label="Precio" type="number" value={precio} onChange={(e: any) => setPrecio(e.target.value)} required />
-                                <div className="flex flex-col gap-1.5 w-full">
+                                 <Input label="Precio" type="number" value={precio} onChange={(e:any)=>setPrecio(e.target.value)} required />
+                                 <div className="flex flex-col gap-1.5 w-full">
                                     <label className="text-xs font-medium text-slate-500 dark:text-[#92c9a4] uppercase tracking-wider">Tipo</label>
-                                    <select
-                                        value={tipo}
-                                        onChange={(e: any) => { setTipo(e.target.value); setCategoriaId(''); }}
+                                    <select 
+                                        value={tipo} 
+                                        onChange={(e:any) => { setTipo(e.target.value); setCategoriaId(''); }} 
                                         className="w-full bg-white dark:bg-[#162b1e] border border-slate-300 dark:border-[#23482f] rounded-lg px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:border-primary"
                                     >
                                         <option value="PLATILLO">Platillo</option>
                                         <option value="BEBIDA">Bebida</option>
                                     </select>
-                                </div>
+                                 </div>
                             </div>
                             <div className="flex flex-col gap-1.5 w-full">
                                 <label className="text-xs font-medium text-slate-500 dark:text-[#92c9a4] uppercase tracking-wider">Categoría ({tipo})</label>
-                                <select
-                                    value={categoriaId}
-                                    onChange={(e: any) => setCategoriaId(e.target.value)}
-                                    className="w-full bg-white dark:bg-[#162b1e] border border-slate-300 dark:border-[#23482f] rounded-lg px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:border-primary"
+                                <select 
+                                    value={categoriaId} 
+                                    onChange={(e:any)=>setCategoriaId(e.target.value)} 
+                                    className="w-full bg-white dark:bg-[#162b1e] border border-slate-300 dark:border-[#23482f] rounded-lg px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:border-primary" 
                                     required
                                 >
                                     <option value="">Selecciona...</option>
@@ -226,15 +226,15 @@ export const ScreenProductManager = () => {
                                     {categoriasForm.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                                 </select>
                             </div>
-                            <Input label="Descripción" value={descripcion} onChange={(e: any) => setDescripcion(e.target.value)} />
-
+                            <Input label="Descripción" value={descripcion} onChange={(e:any)=>setDescripcion(e.target.value)} />
+                            
                             {/* Sección de Imagen ACTUALIZADA */}
                             <div className="flex flex-col gap-2">
                                 <label className="text-xs font-medium text-slate-500 dark:text-[#92c9a4] uppercase tracking-wider">Imagen del Producto</label>
-                                <input
-                                    type="text"
-                                    value={imagen}
-                                    onChange={(e) => setImagen(e.target.value)}
+                                <input 
+                                    type="text" 
+                                    value={imagen} 
+                                    onChange={(e)=>setImagen(e.target.value)} 
                                     placeholder="https://..."
                                     className="w-full bg-white dark:bg-[#162b1e] border border-slate-300 dark:border-[#23482f] rounded-lg px-4 py-3 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-white/20 focus:outline-none focus:border-primary text-xs truncate"
                                     readOnly // Ahora es readOnly para forzar subida o URL generada
@@ -243,7 +243,7 @@ export const ScreenProductManager = () => {
                                 <div className="relative group">
                                     <div className={`flex items-center justify-center w-full px-4 py-2 border border-dashed border-slate-300 dark:border-[#23482f] rounded-lg cursor-pointer bg-white dark:bg-[#162b1e] transition-colors ${subiendoImg ? 'opacity-50' : 'hover:border-primary/50'}`}>
                                         {subiendoImg ? (
-                                            <span className="text-xs text-slate-500 dark:text-white">Subiendo...</span>
+                                             <span className="text-xs text-slate-500 dark:text-white">Subiendo...</span>
                                         ) : (
                                             <>
                                                 <span className="material-symbols-outlined text-slate-400 dark:text-[#92c9a4] mr-2 text-sm">cloud_upload</span>
@@ -262,7 +262,7 @@ export const ScreenProductManager = () => {
                                     </div>
                                 )}
                             </div>
-
+                            
                             <div className="flex gap-2 mt-2">
                                 {modoEdicion && <Button variant="secondary" onClick={resetForm} className="flex-1">Cancelar</Button>}
                                 <Button type="submit" disabled={!!errorCodigo || subiendoImg} className={`flex-1 ${errorCodigo ? 'opacity-50 cursor-not-allowed' : ''}`}>
@@ -276,15 +276,15 @@ export const ScreenProductManager = () => {
                 {/* Lista */}
                 <div className="lg:col-span-2">
                     <div className="bg-white dark:bg-surface-dark border border-slate-200 dark:border-[#23482f] rounded-xl overflow-hidden flex flex-col min-h-[500px] lg:h-full lg:max-h-[calc(100vh-140px)] shadow-sm">
-                        <div className="p-4 bg-slate-100 dark:bg-[#102216] border-b border-slate-200 dark:border-[#23482f] flex flex-col gap-3 sticky top-0 z-10">
+                         <div className="p-4 bg-slate-100 dark:bg-[#102216] border-b border-slate-200 dark:border-[#23482f] flex flex-col gap-3 sticky top-0 z-10">
                             <div className="flex justify-between items-center">
                                 <h3 className="text-slate-900 dark:text-white font-bold whitespace-nowrap">Catálogo de Productos</h3>
                             </div>
-
+                            
                             <div className="flex flex-col xl:flex-row gap-2 w-full">
-                                <select
-                                    value={filtroTipoGeneral}
-                                    onChange={(e: any) => setFiltroTipoGeneral(e.target.value)}
+                                <select 
+                                    value={filtroTipoGeneral} 
+                                    onChange={(e:any) => setFiltroTipoGeneral(e.target.value)}
                                     className="bg-white dark:bg-[#162b1e] border border-slate-300 dark:border-[#23482f] rounded-lg py-2 px-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-primary cursor-pointer min-w-[120px]"
                                 >
                                     <option value="TODOS">Todos los Tipos</option>
@@ -292,28 +292,28 @@ export const ScreenProductManager = () => {
                                     <option value="BEBIDA">Bebidas</option>
                                 </select>
 
-                                <select
-                                    value={filtroCategoria}
+                                <select 
+                                    value={filtroCategoria} 
                                     onChange={(e) => setFiltroCategoria(e.target.value)}
                                     className="bg-white dark:bg-[#162b1e] border border-slate-300 dark:border-[#23482f] rounded-lg py-2 px-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-primary cursor-pointer min-w-[180px]"
                                 >
                                     <option value="">Todas las Categorías</option>
                                     {categoriasFiltro.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                                 </select>
-
+                                
                                 <div className="relative w-full">
                                     <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400 dark:text-gray-500 text-sm">search</span>
-                                    <input
-                                        type="text"
-                                        placeholder="Buscar por nombre o código..."
+                                    <input 
+                                        type="text" 
+                                        placeholder="Buscar por nombre o código..." 
                                         value={busqueda}
                                         onChange={(e) => setBusqueda(e.target.value)}
                                         className="w-full bg-white dark:bg-[#162b1e] border border-slate-300 dark:border-[#23482f] rounded-full py-2 pl-9 pr-4 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-primary"
                                     />
                                 </div>
                             </div>
-                        </div>
-                        <div className="overflow-auto flex-1">
+                         </div>
+                         <div className="overflow-auto flex-1">
                             <table className="w-full text-left text-sm text-slate-600 dark:text-gray-400">
                                 <thead className="bg-slate-100 dark:bg-[#102216] uppercase font-bold text-xs text-slate-700 dark:text-white sticky top-0 z-10 shadow-sm">
                                     <tr>
@@ -346,7 +346,7 @@ export const ScreenProductManager = () => {
                                                     <td className="px-4 py-3 text-right">
                                                         <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                                             <button onClick={() => handleEditar(item)} className="p-1 hover:text-blue-600 dark:hover:text-white text-blue-500 dark:text-blue-400"><span className="material-symbols-outlined">edit</span></button>
-                                                            <button onClick={() => setItemToDelete({ id: item.id, name: item.nombre })} className="p-1 hover:text-red-600 dark:hover:text-white text-red-500 dark:text-red-400"><span className="material-symbols-outlined">delete</span></button>
+                                                            <button onClick={() => setItemToDelete({id: item.id, name: item.nombre})} className="p-1 hover:text-red-600 dark:hover:text-white text-red-500 dark:text-red-400"><span className="material-symbols-outlined">delete</span></button>
                                                         </div>
                                                     </td>
                                                 </tr>
@@ -355,46 +355,46 @@ export const ScreenProductManager = () => {
                                     )}
                                 </tbody>
                             </table>
-                        </div>
-                        {/* Footer Paginación */}
-                        <div className="p-3 bg-slate-100 dark:bg-[#102216] border-t border-slate-200 dark:border-[#23482f] flex flex-col sm:flex-row justify-between items-center gap-4 text-xs">
-                            <div className="flex items-center gap-2 text-slate-600 dark:text-[#92c9a4]">
-                                <span>Mostrar</span>
-                                <select
-                                    value={itemsPorPagina}
+                         </div>
+                         {/* Footer Paginación */}
+                         <div className="p-3 bg-slate-100 dark:bg-[#102216] border-t border-slate-200 dark:border-[#23482f] flex flex-col sm:flex-row justify-between items-center gap-4 text-xs">
+                             <div className="flex items-center gap-2 text-slate-600 dark:text-[#92c9a4]">
+                                 <span>Mostrar</span>
+                                 <select 
+                                    value={itemsPorPagina} 
                                     onChange={(e) => { setItemsPorPagina(Number(e.target.value)); setPaginaActual(1); }}
                                     className="bg-white dark:bg-[#162b1e] border border-slate-300 dark:border-[#23482f] text-slate-900 dark:text-white rounded px-2 py-1 focus:outline-none focus:border-primary cursor-pointer"
-                                >
-                                    <option value={5}>5</option>
-                                    <option value={10}>10</option>
-                                    <option value={15}>15</option>
-                                    <option value={20}>20</option>
-                                </select>
-                                <span>por página</span>
-                            </div>
-
-                            <div className="flex items-center gap-4">
-                                <span className="text-slate-600 dark:text-[#92c9a4]">
-                                    {indicePrimerItem + 1}-{Math.min(indiceUltimoItem, insumosFiltradosTabla.length)} de {insumosFiltradosTabla.length}
-                                </span>
-                                <div className="flex gap-1">
-                                    <button
-                                        onClick={() => cambiarPagina(paginaActual - 1)}
+                                 >
+                                     <option value={5}>5</option>
+                                     <option value={10}>10</option>
+                                     <option value={15}>15</option>
+                                     <option value={20}>20</option>
+                                 </select>
+                                 <span>por página</span>
+                             </div>
+                             
+                             <div className="flex items-center gap-4">
+                                 <span className="text-slate-600 dark:text-[#92c9a4]">
+                                     {indicePrimerItem + 1}-{Math.min(indiceUltimoItem, insumosFiltradosTabla.length)} de {insumosFiltradosTabla.length}
+                                 </span>
+                                 <div className="flex gap-1">
+                                     <button 
+                                        onClick={() => cambiarPagina(paginaActual - 1)} 
                                         disabled={paginaActual === 1}
                                         className="p-1 rounded hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-white disabled:opacity-30 disabled:hover:bg-transparent"
-                                    >
-                                        <span className="material-symbols-outlined">chevron_left</span>
-                                    </button>
-                                    <button
-                                        onClick={() => cambiarPagina(paginaActual + 1)}
+                                     >
+                                         <span className="material-symbols-outlined">chevron_left</span>
+                                     </button>
+                                     <button 
+                                        onClick={() => cambiarPagina(paginaActual + 1)} 
                                         disabled={paginaActual === totalPaginas || totalPaginas === 0}
                                         className="p-1 rounded hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-white disabled:opacity-30 disabled:hover:bg-transparent"
-                                    >
-                                        <span className="material-symbols-outlined">chevron_right</span>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
+                                     >
+                                         <span className="material-symbols-outlined">chevron_right</span>
+                                     </button>
+                                 </div>
+                             </div>
+                         </div>
                     </div>
                 </div>
             </div>
@@ -405,19 +405,19 @@ export const ScreenProductManager = () => {
 export const ScreenCategoryManager = () => {
     // Mantener ScreenCategoryManager como estaba, pero asegurando que use el nuevo dbService asíncrono
     const [categorias, setCategorias] = useState<Categoria[]>([]);
-    const [itemToDelete, setItemToDelete] = useState<{ id: string, name: string } | null>(null);
+    const [itemToDelete, setItemToDelete] = useState<{id: string, name: string} | null>(null);
     const [busqueda, setBusqueda] = useState('');
-    const [filtroTipo, setFiltroTipo] = useState<'TODOS' | 'PLATILLO' | 'BEBIDA'>('TODOS');
+    const [filtroTipo, setFiltroTipo] = useState<'TODOS'|'PLATILLO'|'BEBIDA'>('TODOS');
     const [paginaActual, setPaginaActual] = useState(1);
     const [itemsPorPagina, setItemsPorPagina] = useState(5);
     const [nombre, setNombre] = useState('');
-    const [tipo, setTipo] = useState<'PLATILLO' | 'BEBIDA'>('PLATILLO');
+    const [tipo, setTipo] = useState<'PLATILLO'|'BEBIDA'>('PLATILLO');
     const [descripcion, setDescripcion] = useState('');
-    const [idEdicion, setIdEdicion] = useState<string | null>(null);
+    const [idEdicion, setIdEdicion] = useState<string|null>(null);
     const [errorNombre, setErrorNombre] = useState('');
 
-    useEffect(() => {
-        cargar();
+    useEffect(() => { 
+        cargar(); 
         window.addEventListener('apprest-config-updated', cargar);
         return () => window.removeEventListener('apprest-config-updated', cargar);
     }, []);
@@ -469,7 +469,7 @@ export const ScreenCategoryManager = () => {
 
     return (
         <AdminLayout title="Gestión de Categorías" variant="inventory">
-            <ConfirmModal
+            <ConfirmModal 
                 isOpen={!!itemToDelete}
                 onClose={() => setItemToDelete(null)}
                 onConfirm={confirmarEliminar}
@@ -487,16 +487,16 @@ export const ScreenCategoryManager = () => {
                         </div>
                         <div className="flex flex-col gap-1.5 w-full">
                             <label className="text-xs font-medium text-slate-500 dark:text-[#92c9a4] uppercase tracking-wider">Tipo General</label>
-                            <select
-                                value={tipo}
-                                onChange={(e: any) => setTipo(e.target.value)}
+                            <select 
+                                value={tipo} 
+                                onChange={(e:any)=>setTipo(e.target.value)} 
                                 className="w-full bg-white dark:bg-[#162b1e] border border-slate-300 dark:border-[#23482f] rounded-lg px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:border-primary"
                             >
                                 <option value="PLATILLO">Platillo (Comida)</option>
                                 <option value="BEBIDA">Bebida</option>
                             </select>
                         </div>
-                        <Input label="Descripción" value={descripcion} onChange={(e: any) => setDescripcion(e.target.value)} />
+                        <Input label="Descripción" value={descripcion} onChange={(e:any)=>setDescripcion(e.target.value)} />
                         <div className="flex gap-2">
                             {idEdicion && <Button variant="ghost" onClick={resetForm}>Cancelar</Button>}
                             <Button type="submit" disabled={!!errorNombre} className={`flex-1 ${errorNombre ? 'opacity-50 cursor-not-allowed' : ''}`}>Guardar</Button>
@@ -508,21 +508,21 @@ export const ScreenCategoryManager = () => {
                     <div className="p-4 bg-slate-100 dark:bg-[#102216] border-b border-slate-200 dark:border-[#23482f] flex flex-col gap-3 sticky top-0 z-10">
                         <div className="flex justify-between items-center"><h3 className="text-slate-900 dark:text-white font-bold whitespace-nowrap">Listado de Categorías</h3></div>
                         <div className="flex flex-col sm:flex-row gap-2 w-full">
-                            <select
-                                value={filtroTipo}
-                                onChange={(e: any) => setFiltroTipo(e.target.value)}
+                            <select 
+                                value={filtroTipo} 
+                                onChange={(e:any) => setFiltroTipo(e.target.value)} 
                                 className="bg-white dark:bg-[#162b1e] border border-slate-300 dark:border-[#23482f] rounded-lg py-1.5 px-3 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-primary cursor-pointer w-full sm:w-auto min-w-[120px]"
                             >
                                 <option value="TODOS">Todos</option><option value="PLATILLO">Platillos</option><option value="BEBIDA">Bebidas</option>
                             </select>
                             <div className="relative w-full">
                                 <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400 dark:text-gray-500 text-sm">search</span>
-                                <input
-                                    type="text"
-                                    placeholder="Buscar..."
-                                    value={busqueda}
-                                    onChange={(e) => setBusqueda(e.target.value)}
-                                    className="w-full bg-white dark:bg-[#162b1e] border border-slate-300 dark:border-[#23482f] rounded-full py-1.5 pl-9 pr-4 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-primary"
+                                <input 
+                                    type="text" 
+                                    placeholder="Buscar..." 
+                                    value={busqueda} 
+                                    onChange={(e) => setBusqueda(e.target.value)} 
+                                    className="w-full bg-white dark:bg-[#162b1e] border border-slate-300 dark:border-[#23482f] rounded-full py-1.5 pl-9 pr-4 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-primary" 
                                 />
                             </div>
                         </div>
@@ -539,41 +539,41 @@ export const ScreenCategoryManager = () => {
                                 </div>
                                 <div className="flex gap-2">
                                     <button onClick={() => handleEditar(c)} className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-white"><span className="material-symbols-outlined">edit</span></button>
-                                    <button onClick={() => setItemToDelete({ id: c.id, name: c.nombre })} className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-white"><span className="material-symbols-outlined">delete</span></button>
+                                    <button onClick={() => setItemToDelete({id: c.id, name: c.nombre})} className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-white"><span className="material-symbols-outlined">delete</span></button>
                                 </div>
                             </li>
                         ))}
                     </ul>
                     <div className="p-3 bg-slate-100 dark:bg-[#102216] border-t border-slate-200 dark:border-[#23482f] flex flex-col sm:flex-row justify-between items-center gap-4 text-xs">
-                        <div className="flex items-center gap-2 text-slate-600 dark:text-[#92c9a4]">
-                            <span>Mostrar</span>
-                            <select
-                                value={itemsPorPagina}
-                                onChange={(e) => { setItemsPorPagina(Number(e.target.value)); setPaginaActual(1); }}
+                         <div className="flex items-center gap-2 text-slate-600 dark:text-[#92c9a4]">
+                             <span>Mostrar</span>
+                             <select 
+                                value={itemsPorPagina} 
+                                onChange={(e) => { setItemsPorPagina(Number(e.target.value)); setPaginaActual(1); }} 
                                 className="bg-white dark:bg-[#162b1e] border border-slate-300 dark:border-[#23482f] text-slate-900 dark:text-white rounded px-2 py-1 focus:outline-none focus:border-primary cursor-pointer"
-                            >
-                                <option value={5}>5</option><option value={10}>10</option><option value={15}>15</option><option value={20}>20</option>
-                            </select>
-                        </div>
-                        <div className="flex items-center gap-4">
-                            <span className="text-slate-600 dark:text-[#92c9a4]">{indicePrimerItem + 1}-{Math.min(indiceUltimoItem, categoriasFiltradas.length)} de {categoriasFiltradas.length}</span>
-                            <div className="flex gap-1">
-                                <button
-                                    onClick={() => cambiarPagina(paginaActual - 1)}
-                                    disabled={paginaActual === 1}
+                             >
+                                 <option value={5}>5</option><option value={10}>10</option><option value={15}>15</option><option value={20}>20</option>
+                             </select>
+                         </div>
+                         <div className="flex items-center gap-4">
+                             <span className="text-slate-600 dark:text-[#92c9a4]">{indicePrimerItem + 1}-{Math.min(indiceUltimoItem, categoriasFiltradas.length)} de {categoriasFiltradas.length}</span>
+                             <div className="flex gap-1">
+                                 <button 
+                                    onClick={() => cambiarPagina(paginaActual - 1)} 
+                                    disabled={paginaActual === 1} 
                                     className="p-1 rounded hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-white disabled:opacity-30"
-                                >
-                                    <span className="material-symbols-outlined">chevron_left</span>
-                                </button>
-                                <button
-                                    onClick={() => cambiarPagina(paginaActual + 1)}
-                                    disabled={paginaActual === totalPaginas || totalPaginas === 0}
+                                 >
+                                     <span className="material-symbols-outlined">chevron_left</span>
+                                 </button>
+                                 <button 
+                                    onClick={() => cambiarPagina(paginaActual + 1)} 
+                                    disabled={paginaActual === totalPaginas || totalPaginas === 0} 
                                     className="p-1 rounded hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-white disabled:opacity-30"
-                                >
-                                    <span className="material-symbols-outlined">chevron_right</span>
-                                </button>
-                            </div>
-                        </div>
+                                 >
+                                     <span className="material-symbols-outlined">chevron_right</span>
+                                 </button>
+                             </div>
+                         </div>
                     </div>
                 </div>
             </div>
